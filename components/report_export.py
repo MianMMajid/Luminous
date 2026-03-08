@@ -129,12 +129,6 @@ def render_report_export():
 
     st.divider()
 
-    # --- PDF Report (hero download) ---
-    st.markdown("#### Download Full Report")
-    _render_pdf_download(query, prediction, trust_audit, bio_context, interpretation, key_suffix="_full")
-
-    st.divider()
-
     # --- Other Downloads ---
     st.markdown("#### Other Exports")
     col1, col2, col3, col4 = st.columns(4)
@@ -210,6 +204,10 @@ def render_report_export():
     # --- Data-Driven Scientific Figures (Claude SVG) ---
     st.divider()
     _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
+
+    # --- Code Execution Figures (Claude sandbox — matplotlib/seaborn) ---
+    st.divider()
+    _render_code_execution_figures(query, prediction, trust_audit, bio_context)
 
     # --- BioRender Templates (Live MCP search) ---
     st.divider()
@@ -814,6 +812,109 @@ def _show_data_preview(gathered: dict, suffix: str):
         st.info("Click **Generate** to create a data-driven scientific diagram.")
 
 
+def _render_code_execution_figures(
+    query: ProteinQuery,
+    prediction: PredictionResult | None,
+    trust_audit: TrustAudit | None,
+    bio_context: BioContext | None,
+):
+    """Render publication-quality figures generated via Claude's Code Execution sandbox."""
+    from src.code_execution_figures import (
+        generate_code_execution_figure,
+        get_available_figure_types,
+    )
+    from src.svg_figures import gather_figure_data
+
+    st.markdown("#### Publication Figures (Claude Code Execution)")
+    st.caption(
+        "Claude writes and runs matplotlib/seaborn code in a sandboxed environment, "
+        "producing actual rendered PNG figures from your computed data."
+    )
+
+    gathered = gather_figure_data(query, prediction, trust_audit, bio_context)
+    data_json = json.dumps(gathered, sort_keys=True, default=str)
+
+    available = get_available_figure_types(gathered)
+    if not available:
+        st.info("Not enough data to generate publication figures. Run a full analysis first.")
+        return
+
+    tab_labels = [label for _, label in available]
+    tabs = st.tabs(tab_labels)
+
+    mut_str = f"_{query.mutation}" if query.mutation else ""
+    protein = query.protein_name
+
+    for idx, (fig_type, label) in enumerate(available):
+        with tabs[idx]:
+            cache_key = f"cex_{fig_type}_{protein}"
+
+            if cache_key not in st.session_state:
+                st.session_state[cache_key] = None
+
+            col_btn, col_info = st.columns([1, 3])
+            with col_btn:
+                generate = st.button(
+                    f"Generate {label}",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"cex_gen_{fig_type}",
+                )
+
+            if generate:
+                with st.status(f"Claude is writing & executing Python code for {label}..."):
+                    result = generate_code_execution_figure(fig_type, data_json)
+                    st.session_state[cache_key] = result
+
+            result = st.session_state.get(cache_key)
+
+            if result and result.get("image_bytes"):
+                st.image(
+                    result["image_bytes"],
+                    caption=f"{label} — {protein}{' ' + query.mutation if query.mutation else ''}",
+                    use_container_width=True,
+                )
+
+                # Download button
+                dl_col, code_col = st.columns([1, 1])
+                with dl_col:
+                    st.download_button(
+                        f"Download {label} (PNG)",
+                        data=result["image_bytes"],
+                        file_name=f"{protein}{mut_str}_{fig_type}.png",
+                        mime="image/png",
+                        key=f"cex_dl_{fig_type}",
+                    )
+                with code_col:
+                    with st.expander("View generated code"):
+                        if result.get("code"):
+                            st.code(result["code"], language="python")
+                        if result.get("stdout"):
+                            st.text(result["stdout"])
+
+                st.caption(
+                    "Generated via Claude Code Execution sandbox — "
+                    "matplotlib/seaborn running on real computed data."
+                )
+
+            elif result and result.get("error"):
+                st.warning(f"Figure generation failed: {result['error']}")
+                if result.get("code"):
+                    with st.expander("View attempted code"):
+                        st.code(result["code"], language="python")
+
+            elif not generate:
+                # Show preview of what data is available
+                st.markdown(
+                    f'<div style="background:rgba(0,122,255,0.04);border-radius:12px;'
+                    f'padding:20px;text-align:center;border:1px dashed rgba(0,122,255,0.2)">'
+                    f'<div style="font-size:0.95rem;color:rgba(60,60,67,0.6)">'
+                    f'Click <b>Generate</b> to create a publication-quality '
+                    f'{label.lower()} from your analysis data.</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+
 def _load_precomputed_biorender(query: ProteinQuery) -> list[dict] | None:
     """Load pre-cached BioRender templates from data/precomputed/{key}/biorender.json."""
     from pathlib import Path
@@ -855,26 +956,31 @@ def _render_biorender_section(query: ProteinQuery):
             st.session_state[cache_key] = results
 
     if results is None:
-        from src.biorender_search import search_biorender_templates
+        # Show a button so the search only runs when the user explicitly asks
+        trust_audit_br: TrustAudit | None = st.session_state.get("trust_audit")
+        if st.button("Search BioRender Templates", type="secondary", key="br_search_btn"):
+            from src.biorender_search import search_biorender_templates
 
-        trust_audit: TrustAudit | None = st.session_state.get("trust_audit")
-        trust_summary = None
-        if trust_audit:
-            trust_summary = (
-                f"Confidence: {trust_audit.overall_confidence} "
-                f"({trust_audit.confidence_score:.0%})"
-            )
-            if trust_audit.known_limitations:
-                trust_summary += f". Limitations: {'; '.join(trust_audit.known_limitations[:2])}"
+            trust_summary = None
+            if trust_audit_br:
+                trust_summary = (
+                    f"Confidence: {trust_audit_br.overall_confidence} "
+                    f"({trust_audit_br.confidence_score:.0%})"
+                )
+                if trust_audit_br.known_limitations:
+                    trust_summary += f". Limitations: {'; '.join(trust_audit_br.known_limitations[:2])}"
 
-        with st.status("Searching BioRender for relevant templates..."):
-            results = search_biorender_templates(
-                protein_name=query.protein_name,
-                mutation=query.mutation,
-                question_type=query.question_type,
-                trust_summary=trust_summary,
-            )
-            st.session_state[cache_key] = results
+            with st.status("Searching BioRender for relevant templates..."):
+                results = search_biorender_templates(
+                    protein_name=query.protein_name,
+                    mutation=query.mutation,
+                    question_type=query.question_type,
+                    trust_summary=trust_summary,
+                )
+                st.session_state[cache_key] = results
+        else:
+            st.caption("Click to discover relevant BioRender templates and icons.")
+            return
 
     templates = [r for r in results if r.get("type") == "template"]
     icons = [r for r in results if r.get("type") == "icon"]
@@ -930,39 +1036,44 @@ def _render_biorender_section(query: ProteinQuery):
     st.caption("Prompt is enriched with real computed data from your analysis.")
 
     prompt_key = f"biorender_prompt_{query.protein_name}"
+
     if prompt_key not in st.session_state:
-        from src.biorender_search import generate_figure_prompt
+        if st.button("Generate Figure Prompt", key="gen_fig_prompt_btn"):
+            from src.biorender_search import generate_figure_prompt
 
-        # Build data-enriched interpretation for the prompt
-        interpretation_text = st.session_state.get("interpretation", "")
-        sa = st.session_state.get("structure_analysis") or {}
-        if sa:
-            data_lines = []
-            if sa.get("mutation_sasa") is not None:
-                burial = "buried" if sa.get("mutation_is_buried") else "surface-exposed"
-                data_lines.append(f"Mutation SASA: {sa['mutation_sasa']:.1f} Å² ({burial})")
-            if sa.get("mutation_centrality_percentile"):
-                data_lines.append(f"Network centrality: {sa['mutation_centrality_percentile']:.0f}th percentile")
-            if sa.get("mutation_in_pocket"):
-                data_lines.append("Mutation is inside binding pocket")
-            elif sa.get("mutation_to_pocket_min_distance"):
-                data_lines.append(f"Mutation is {sa['mutation_to_pocket_min_distance']:.1f}Å from nearest pocket")
-            if sa.get("sse_counts"):
-                counts = sa["sse_counts"]
-                total = sum(counts.values()) or 1
-                data_lines.append(f"SSE: {100*counts.get('a',0)/total:.0f}% helix, {100*counts.get('b',0)/total:.0f}% sheet")
-            if data_lines:
-                interpretation_text = (interpretation_text or "") + "\nComputed data: " + "; ".join(data_lines)
+            # Build data-enriched interpretation for the prompt
+            interpretation_text = st.session_state.get("interpretation", "")
+            sa = st.session_state.get("structure_analysis") or {}
+            if sa:
+                data_lines = []
+                if sa.get("mutation_sasa") is not None:
+                    burial = "buried" if sa.get("mutation_is_buried") else "surface-exposed"
+                    data_lines.append(f"Mutation SASA: {sa['mutation_sasa']:.1f} Å² ({burial})")
+                if sa.get("mutation_centrality_percentile"):
+                    data_lines.append(f"Network centrality: {sa['mutation_centrality_percentile']:.0f}th percentile")
+                if sa.get("mutation_in_pocket"):
+                    data_lines.append("Mutation is inside binding pocket")
+                elif sa.get("mutation_to_pocket_min_distance"):
+                    data_lines.append(f"Mutation is {sa['mutation_to_pocket_min_distance']:.1f}Å from nearest pocket")
+                if sa.get("sse_counts"):
+                    counts = sa["sse_counts"]
+                    total = sum(counts.values()) or 1
+                    data_lines.append(f"SSE: {100*counts.get('a',0)/total:.0f}% helix, {100*counts.get('b',0)/total:.0f}% sheet")
+                if data_lines:
+                    interpretation_text = (interpretation_text or "") + "\nComputed data: " + "; ".join(data_lines)
 
-        with st.status("Generating data-enriched figure prompt..."):
-            prompt = generate_figure_prompt(
-                protein_name=query.protein_name,
-                mutation=query.mutation,
-                question_type=query.question_type,
-                interaction_partner=getattr(query, "interaction_partner", None),
-                interpretation=interpretation_text,
-            )
-            st.session_state[prompt_key] = prompt or ""
+            with st.status("Generating data-enriched figure prompt..."):
+                prompt = generate_figure_prompt(
+                    protein_name=query.protein_name,
+                    mutation=query.mutation,
+                    question_type=query.question_type,
+                    interaction_partner=getattr(query, "interaction_partner", None),
+                    interpretation=interpretation_text,
+                )
+                st.session_state[prompt_key] = prompt or ""
+        else:
+            st.caption("Click to generate a data-enriched figure prompt for BioRender.")
+            return
 
     figure_prompt = st.session_state.get(prompt_key, "")
     if figure_prompt:

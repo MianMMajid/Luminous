@@ -17,7 +17,7 @@ from src.models import (
     RegionConfidence,
     TrustAudit,
 )
-from src.utils import safe_json_dumps
+from src.utils import safe_json_dumps, safe_json_loads
 
 _PROJECTS_DIR = Path("data/projects")
 
@@ -91,7 +91,7 @@ def _render_load_uploader():
     )
     if uploaded is not None:
         try:
-            project_data = json.loads(uploaded.read().decode("utf-8"))
+            project_data = safe_json_loads(uploaded.read().decode("utf-8"))
             _deserialize_session(project_data)
             st.success(f"Loaded project: {uploaded.name}")
             st.rerun()
@@ -132,7 +132,7 @@ def _render_recent_projects():
             with col_load:
                 if st.button("Load Project", key=f"load_recent_{pf.name}", use_container_width=True):
                     try:
-                        data = json.loads(pf.read_text())
+                        data = safe_json_loads(pf.read_text())
                         _deserialize_session(data)
                         st.success(f"Loaded: {pf.name}")
                         st.rerun()
@@ -175,12 +175,15 @@ def _serialize_session() -> dict:
         "figure_checklist_state", "sketch_interpretation",
         "comparison_data", "playground_pinned", "playground_plan",
         "playground_inspiration",
+        # Bytes values — SafeJSONEncoder encodes them as base64
+        "sketch_image_bytes", "generated_video", "esmfold_pdb",
     ]
     for key in _PLAIN_KEYS:
         val = st.session_state.get(key)
         if val is not None:
             try:
-                json.loads(json.dumps(val, default=str))  # verify serializable
+                # Use safe_json_dumps so bytes → base64 dict (not str())
+                safe_json_dumps(val)
                 data[key] = val
             except (TypeError, ValueError):
                 pass
@@ -190,13 +193,15 @@ def _serialize_session() -> dict:
         "variant_data_", "variant_enrichment_",
         "alphamissense_", "domains_", "flexibility_",
         "pockets_", "struct_analysis_", "alphafold_",
-        "tamarind_results_", "svg_diagram_",
+        "tamarind_results_", "svg_diagram_", "svg_",
+        "pdf_bytes_", "html_report_", "figure_kit_",
+        "rcsb_pdb_id_", "cex_",
     )
     dyn: dict = {}
     for k, v in st.session_state.items():
         if isinstance(k, str) and k.startswith(_DYN_PREFIXES):
             try:
-                json.loads(json.dumps(v, default=str))
+                safe_json_dumps(v)
                 dyn[k] = v
             except (TypeError, ValueError):
                 pass
@@ -212,14 +217,47 @@ def _deserialize_session(data: dict):
     Clears ALL analysis state first so that no stale artifacts from the
     current session survive into the loaded project.
     """
-    # ── Wipe existing analysis state ──
-    from app import reset_results
-    reset_results()
-    # Also clear query-level state that reset_results doesn't touch
-    st.session_state["parsed_query"] = None
+    # ── Wipe ALL existing analysis state before loading ──
+    try:
+        from src.task_manager import task_manager
+        task_manager.clear()
+    except Exception:
+        pass
+    _RESET_KEYS = [
+        "parsed_query", "query_parsed", "raw_query",
+        "prediction_result", "trust_audit", "bio_context",
+        "interpretation", "stats_data", "stats_results",
+        "stats_survival_data", "structure_analysis",
+        "generated_hypotheses", "panel_figure_data",
+        "graphical_abstract_svg", "figure_checklist_state",
+        "experiment_tracker", "sketch_image_bytes",
+        "sketch_interpretation", "comparison_data",
+        "playground_inspiration", "playground_pinned",
+        "playground_plan", "esmfold_pdb", "docked_complex_pdb",
+        "generated_video", "_interpretation_attempted",
+        "_prediction_raw",
+    ]
+    for key in _RESET_KEYS:
+        st.session_state[key] = None
     st.session_state["query_parsed"] = False
     st.session_state["raw_query"] = ""
     st.session_state["chat_messages"] = []
+    st.session_state["playground_pinned"] = []
+    st.session_state["_chat_thinking"] = False
+    _dyn_prefixes = (
+        "variant_data_", "alphamissense_", "domains_",
+        "flexibility_", "pockets_", "struct_analysis_",
+        "alphafold_", "biorender_results_", "tamarind_results_",
+        "svg_diagram_", "svg_", "_dashboard_",
+        "_variant_fetch_attempted_", "variant_enrichment_",
+        "pdf_bytes_", "nma_traj_", "morph_traj_",
+        "charge_", "struct_diff_", "electrostatics_data_",
+        "html_report_", "figure_kit_", "cex_",
+        "rcsb_pdb_id_", "biorender_prompt_",
+    )
+    for k in list(st.session_state.keys()):
+        if isinstance(k, str) and k.startswith(_dyn_prefixes):
+            del st.session_state[k]
 
     # Query
     if "parsed_query" in data:
@@ -292,6 +330,25 @@ def _deserialize_session(data: dict):
     # Experiment tracker
     if "experiment_tracker" in data:
         st.session_state["experiment_tracker"] = data["experiment_tracker"]
+
+    # Restore plain-value keys saved by _serialize_session
+    _PLAIN_KEYS = [
+        "stats_data", "stats_results", "stats_survival_data",
+        "structure_analysis", "generated_hypotheses",
+        "panel_figure_data", "graphical_abstract_svg",
+        "figure_checklist_state", "sketch_interpretation",
+        "comparison_data", "playground_pinned", "playground_plan",
+        "playground_inspiration",
+    ]
+    for key in _PLAIN_KEYS:
+        if key in data:
+            st.session_state[key] = data[key]
+
+    # Restore dynamic per-protein caches
+    dyn = data.get("_dynamic_caches")
+    if isinstance(dyn, dict):
+        for k, v in dyn.items():
+            st.session_state[k] = v
 
 
 def _project_filename(data: dict) -> str:

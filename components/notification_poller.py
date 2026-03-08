@@ -29,6 +29,8 @@ _TASK_MESSAGES = {
 
 # Tasks that should trigger a full rerun when complete
 _CRITICAL_TASKS = {"prediction", "bio_context", "interpretation", "video_generation", "variant_landscape", "hypothesis_generation", "chat_response"}
+# Prefixes that also trigger rerun (for dynamic task IDs like variant_enrichment_TP53)
+_CRITICAL_PREFIXES = ("variant_enrichment_",)
 
 
 @st.fragment(run_every=2)
@@ -80,16 +82,19 @@ def render_notification_poller():
             )
 
             # Check if this warrants a full rerun
-            if task.task_id in _CRITICAL_TASKS:
+            if task.task_id in _CRITICAL_TASKS or task.task_id.startswith(_CRITICAL_PREFIXES):
                 needs_rerun = True
 
         elif task.status == TaskStatus.FAILED:
+            # Clear thinking flag on chat failure so bubble doesn't get stuck
+            if task.task_id == "chat_response":
+                st.session_state["_chat_thinking"] = False
             st.toast(
                 f"**Lumi:** {task.label} failed.\n\n{task.error or 'Unknown error'}",
                 icon="⚠️",
             )
             # Also trigger rerun on failure so the UI can show retry options
-            if task.task_id in _CRITICAL_TASKS:
+            if task.task_id in _CRITICAL_TASKS or task.task_id.startswith(_CRITICAL_PREFIXES):
                 needs_rerun = True
 
     # Trigger full rerun if critical tasks completed

@@ -12,6 +12,12 @@ import streamlit as st
 from src.models import PredictionResult, ProteinQuery
 
 
+def _enrich_variants_background(protein_name: str, positions: list[int]) -> dict:
+    """Run variant enrichment in a background thread (no st.* calls)."""
+    from src.variant_enrichment import enrich_variants
+    return enrich_variants(protein_name, positions)
+
+
 def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
     """Render the variant pathogenicity landscape panel."""
     st.markdown("#### Variant Pathogenicity Landscape")
@@ -82,38 +88,45 @@ def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
         return
 
     # Enrich variants with myvariant.info (CADD, gnomAD, SIFT, PolyPhen-2, etc.)
+    # Runs in background to avoid blocking render with paginated HTTP calls
     enrichment_key = f"variant_enrichment_{query.protein_name}"
     if st.session_state.get(enrichment_key) is None:
-        try:
-            from src.variant_enrichment import enrich_variants
+        from src.task_manager import task_manager
+
+        enrich_task_id = f"variant_enrichment_{query.protein_name}"
+        enrich_status = task_manager.status(enrich_task_id)
+        if not enrich_status or enrich_status.value not in ("pending", "running"):
             positions = [v.get("position") for v in variant_data.get("variants", []) if v.get("position")]
             positions = [int(p) for p in positions if p is not None]
             if positions:
-                enrichment = enrich_variants(query.protein_name, positions)
-                st.session_state[enrichment_key] = enrichment
-                # Merge enrichment data back into variants
-                enriched = enrichment.get("enriched", {})
-                if enriched:
-                    for v in variant_data.get("variants", []):
-                        pos = v.get("position")
-                        if pos and int(pos) in enriched:
-                            edata = enriched[int(pos)]
-                            if "cadd_phred" in edata and v.get("cadd_score") is None:
-                                v["cadd_score"] = edata["cadd_phred"]
-                            if "gnomad_af" in edata and v.get("frequency") is None:
-                                v["frequency"] = edata["gnomad_af"]
-                            if "clinvar_significance" in edata and not v.get("significance"):
-                                v["significance"] = edata["clinvar_significance"]
-                            if "sift_pred" in edata:
-                                v["sift_pred"] = edata["sift_pred"]
-                            if "polyphen2_pred" in edata:
-                                v["polyphen2_pred"] = edata["polyphen2_pred"]
-                            if "revel_score" in edata:
-                                v["revel_score"] = edata["revel_score"]
-                            if "cosmic_id" in edata:
-                                v["cosmic_id"] = edata["cosmic_id"]
-        except Exception:
-            pass  # Enrichment is best-effort
+                task_manager.submit(
+                    task_id=enrich_task_id,
+                    fn=_enrich_variants_background,
+                    args=(query.protein_name, positions),
+                    label="Enriching variants (CADD, gnomAD, SIFT)",
+                    target_keys={"__direct__": enrichment_key},
+                )
+    else:
+        # Merge enrichment data into variants if available
+        enrichment = st.session_state.get(enrichment_key)
+        if isinstance(enrichment, dict):
+            enriched = enrichment.get("enriched", {})
+            if enriched:
+                for v in variant_data.get("variants", []):
+                    pos = v.get("position")
+                    if pos and int(pos) in enriched:
+                        edata = enriched[int(pos)]
+                        for src_key, dst_key in [
+                            ("cadd_phred", "cadd_score"),
+                            ("gnomad_af", "frequency"),
+                            ("clinvar_significance", "significance"),
+                            ("sift_pred", "sift_pred"),
+                            ("polyphen2_pred", "polyphen2_pred"),
+                            ("revel_score", "revel_score"),
+                            ("cosmic_id", "cosmic_id"),
+                        ]:
+                            if src_key in edata and not v.get(dst_key):
+                                v[dst_key] = edata[src_key]
 
     # Summary metrics
     _render_variant_summary(variant_data)

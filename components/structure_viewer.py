@@ -551,22 +551,35 @@ def _run_modal(query: ProteinQuery) -> bool:
 
 
 def _auto_interpret(query: ProteinQuery, precomputed: dict):
-    """Auto-generate interpretation when precomputed data is loaded."""
+    """Auto-generate interpretation in background when precomputed data is loaded."""
     if st.session_state.get("interpretation") is not None:
         return
-    # Build trust audit first if needed
     trust_audit = st.session_state.get("trust_audit")
     bio_context = st.session_state.get("bio_context")
     if trust_audit and bio_context:
-        try:
-            from src.interpreter import generate_interpretation
-            interp = generate_interpretation(query, trust_audit, bio_context)
-            st.session_state["interpretation"] = interp
-        except Exception:
-            from src.interpreter import _fallback_interpretation
-            st.session_state["interpretation"] = _fallback_interpretation(
-                query, trust_audit, bio_context
-            )
+        from src.background_tasks import generate_interpretation_background
+        from src.task_manager import task_manager
+
+        # Only submit if not already running
+        interp_status = task_manager.status("interpretation")
+        if interp_status and interp_status.value in ("pending", "running"):
+            return
+
+        task_manager.submit(
+            task_id="interpretation",
+            fn=generate_interpretation_background,
+            kwargs={
+                "protein_name": query.protein_name,
+                "uniprot_id": query.uniprot_id,
+                "mutation": query.mutation,
+                "question_type": query.question_type,
+                "interaction_partner": query.interaction_partner,
+                "sequence": query.sequence,
+                "trust_audit_dict": trust_audit,
+                "bio_context_obj": bio_context,
+            },
+            label="AI interpretation",
+        )
 
 
 def _load_precomputed_context(context_data: dict):
@@ -607,61 +620,55 @@ def _load_precomputed_context(context_data: dict):
         )
 
 
-def _fetch_from_rcsb(query: ProteinQuery):
-    """Fetch a known structure from RCSB PDB as fallback."""
+def _fetch_rcsb_background(uniprot_id: str) -> dict:
+    """Fetch RCSB PDB structure in a background thread (no st.* calls).
+
+    Returns dict compatible with _apply_prediction_result in notification_poller.
+    """
     import httpx
 
-    with st.status(f"Fetching experimental structure for {query.uniprot_id} from RCSB PDB..."):
-        try:
-            search_url = "https://search.rcsb.org/rcsbsearch/v2/query"
-            search_query = {
-                "query": {
-                    "type": "terminal",
-                    "service": "text",
-                    "parameters": {
-                        "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
-                        "operator": "exact_match",
-                        "value": query.uniprot_id,
-                    },
-                },
-                "return_type": "entry",
-                "request_options": {
-                    "results_content_type": ["experimental"],
-                    "return_all_hits": False,
-                },
-            }
-            resp = httpx.post(search_url, json=search_query, timeout=15)
-            if resp.status_code != 200:
-                st.warning("RCSB PDB search failed.")
-                return
+    search_url = "https://search.rcsb.org/rcsbsearch/v2/query"
+    search_query = {
+        "query": {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+                "operator": "exact_match",
+                "value": uniprot_id,
+            },
+        },
+        "return_type": "entry",
+        "request_options": {
+            "results_content_type": ["experimental"],
+            "return_all_hits": False,
+        },
+    }
+    resp = httpx.post(search_url, json=search_query, timeout=15)
+    if resp.status_code != 200:
+        raise RuntimeError("RCSB PDB search failed")
 
-            results = resp.json()
-            hits = results.get("result_set", [])
-            if not hits:
-                st.warning("No experimental structures found in RCSB PDB.")
-                return
+    results = resp.json()
+    hits = results.get("result_set", [])
+    if not hits:
+        raise RuntimeError("No experimental structures found in RCSB PDB")
 
-            pdb_id = hits[0].get("identifier", "")
-            if not pdb_id:
-                return
+    pdb_id = hits[0].get("identifier", "")
+    if not pdb_id:
+        raise RuntimeError("No PDB identifier in search results")
 
-            pdb_resp = httpx.get(
-                f"https://files.rcsb.org/download/{pdb_id}.pdb", timeout=30
-            )
-            if pdb_resp.status_code != 200:
-                st.warning(f"Could not download PDB {pdb_id}.")
-                return
+    pdb_resp = httpx.get(
+        f"https://files.rcsb.org/download/{pdb_id}.pdb", timeout=30
+    )
+    if pdb_resp.status_code != 200:
+        raise RuntimeError(f"Could not download PDB {pdb_id}")
 
-            _store_prediction(pdb_resp.text, {}, source="rcsb",
-                             skip_plddt=True)
-            st.warning(
-                f"Loaded experimental structure **{pdb_id}** from RCSB PDB. "
-                "**B-factors are NOT pLDDT scores** — confidence metrics are unavailable "
-                "for experimental structures. Trust audit values are not meaningful."
-            )
-
-        except Exception as e:
-            st.warning(f"RCSB PDB fetch failed: {e}")
+    return {
+        "pdb": pdb_resp.text,
+        "confidence": {},
+        "source": "rcsb",
+        "skip_plddt": True,
+    }
 
 
 def _store_prediction(
