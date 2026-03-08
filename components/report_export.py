@@ -129,89 +129,87 @@ def render_report_export():
 
     st.divider()
 
-    # --- Other Downloads ---
-    st.markdown("#### Other Exports")
-    col1, col2, col3, col4 = st.columns(4)
+    # --- Quick Exports ---
+    st.markdown("#### Quick Exports")
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        if prediction.pdb_content:
-            st.download_button(
-                "Download PDB",
-                prediction.pdb_content,
-                f"{query.protein_name}_prediction.pdb",
-                mime="chemical/x-pdb",
-                use_container_width=True,
-            )
-
-    with col2:
         report = _build_report_json(query, trust_audit, bio_context, interpretation)
         st.download_button(
-            "Download Report (JSON)",
+            "Report (JSON)",
             safe_json_dumps(report, indent=2),
             f"{query.protein_name}_report.json",
             mime="application/json",
             use_container_width=True,
         )
 
-    with col3:
+    with col2:
         if prediction.plddt_per_residue:
             csv = _build_confidence_csv(prediction)
             st.download_button(
-                "Download Confidence (CSV)",
+                "Confidence (CSV)",
                 csv,
                 f"{query.protein_name}_confidence.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
 
-    with col4:
+    with col3:
         md_report = _build_markdown_report(
             query, trust_audit, bio_context, interpretation
         )
         st.download_button(
-            "Download Report (MD)",
+            "Report (Markdown)",
             md_report,
             f"{query.protein_name}_report.md",
             mime="text/markdown",
             use_container_width=True,
         )
 
-    # --- Export Figure Kit (ZIP) ---
+    # ── Figure Studio & Advanced Exports ──
+    # All figure generation tools and advanced exports in one collapsible section
+    # to reduce scroll depth and cognitive overload.
     st.divider()
-    _render_figure_kit_section(query, prediction, trust_audit, bio_context)
+    with st.expander("Figure Studio & Advanced Exports", expanded=False):
+        st.caption(
+            "Publication-quality figures, graphical abstracts, AI-generated diagrams, "
+            "video animation, experiment tracking, and more."
+        )
+        studio_tabs = st.tabs([
+            "AI Figures (SVG)",
+            "AI Figures (PNG)",
+            "Figure Kit",
+            "Panel Composer",
+            "Graphical Abstract",
+            "Video",
+            "More Exports",
+        ])
 
-    # --- Figure Panel Composer ---
-    st.divider()
-    _render_panel_composer(query, prediction, trust_audit, bio_context)
+        with studio_tabs[0]:
+            _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
 
-    # --- Graphical Abstract Generator ---
-    st.divider()
-    _render_graphical_abstract(query, prediction, trust_audit, bio_context)
+        with studio_tabs[1]:
+            _render_code_execution_figures(query, prediction, trust_audit, bio_context)
 
-    # --- Protein Animation Video ---
-    st.divider()
-    from components.video_panel import render_video_panel
-    render_video_panel()
+        with studio_tabs[2]:
+            _render_figure_kit_section(query, prediction, trust_audit, bio_context)
 
-    # --- Experiment Tracker ---
-    st.divider()
-    _render_experiment_tracker(query, trust_audit, bio_context)
+        with studio_tabs[3]:
+            _render_panel_composer(query, prediction, trust_audit, bio_context)
 
-    # --- Standalone HTML Report ---
-    st.divider()
-    _render_html_export(query, prediction, trust_audit, bio_context, interpretation)
+        with studio_tabs[4]:
+            _render_graphical_abstract(query, prediction, trust_audit, bio_context)
 
-    # --- Data-Driven Scientific Figures (Claude SVG) ---
-    st.divider()
-    _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
+        with studio_tabs[5]:
+            from components.video_panel import render_video_panel
+            render_video_panel()
 
-    # --- Code Execution Figures (Claude sandbox — matplotlib/seaborn) ---
-    st.divider()
-    _render_code_execution_figures(query, prediction, trust_audit, bio_context)
-
-    # --- BioRender Templates (Live MCP search) ---
-    st.divider()
-    _render_biorender_section(query)
+        with studio_tabs[6]:
+            _render_experiment_tracker(query, trust_audit, bio_context)
+            st.divider()
+            _render_html_export(query, prediction, trust_audit, bio_context, interpretation)
+            st.divider()
+            _render_biorender_section(query)
 
 
 def _render_pdf_download(
@@ -397,6 +395,7 @@ def _gather_drug_resistance(query: ProteinQuery) -> list[dict] | None:
     return result if result else None
 
 
+@st.cache_data(show_spinner=False)
 def _build_confidence_chart(
     residue_ids: list[int], plddt_scores: list[float]
 ) -> go.Figure:
@@ -435,18 +434,24 @@ def _build_confidence_chart(
 
 def _build_region_chart(trust_audit: TrustAudit) -> go.Figure:
     regions = trust_audit.regions
-    labels = [f"Ch {r.chain}: {r.start_residue}-{r.end_residue}" for r in regions]
-    scores = [r.avg_plddt for r in regions]
-    colors = [trust_to_color(s) for s in scores]
-    flags = [r.flag or "OK" for r in regions]
+    labels = tuple(f"Ch {r.chain}: {r.start_residue}-{r.end_residue}" for r in regions)
+    scores = tuple(r.avg_plddt for r in regions)
+    flags = tuple(r.flag or "OK" for r in regions)
+    return _build_region_chart_cached(labels, scores, flags)
 
+
+@st.cache_data(show_spinner=False)
+def _build_region_chart_cached(
+    labels: tuple[str, ...], scores: tuple[float, ...], flags: tuple[str, ...]
+) -> go.Figure:
+    colors = [trust_to_color(s) for s in scores]
     fig = go.Figure(
         go.Bar(
-            x=labels,
-            y=scores,
+            x=list(labels),
+            y=list(scores),
             marker_color=colors,
             hovertemplate="%{x}<br>Avg pLDDT: %{y:.1f}<br>%{text}<extra></extra>",
-            text=flags,
+            text=list(flags),
         )
     )
     fig.update_layout(
@@ -465,7 +470,7 @@ def _build_region_chart(trust_audit: TrustAudit) -> go.Figure:
 
 
 def _build_drug_chart(bio_context: BioContext) -> go.Figure:
-    phase_order = ["Identified", "Phase I", "Phase II", "Phase III", "Approved"]
+    phase_order = ("Identified", "Phase I", "Phase II", "Phase III", "Approved")
     phase_counts = {p: 0 for p in phase_order}
     for drug in bio_context.drugs:
         phase = drug.phase or "Identified"
@@ -477,11 +482,18 @@ def _build_drug_chart(bio_context: BioContext) -> go.Figure:
                 break
         if not matched:
             phase_counts["Identified"] += 1
+    counts = tuple(phase_counts[p] for p in phase_order)
+    return _build_drug_chart_cached(phase_order, counts)
 
+
+@st.cache_data(show_spinner=False)
+def _build_drug_chart_cached(
+    phase_order: tuple[str, ...], counts: tuple[int, ...]
+) -> go.Figure:
     fig = go.Figure(
         go.Funnel(
-            y=phase_order,
-            x=[phase_counts[p] for p in phase_order],
+            y=list(phase_order),
+            x=list(counts),
             textinfo="value+label",
             marker=dict(color=["#8E8E93", "#AF52DE", "#FF9500", "#007AFF", "#34C759"]),
         )

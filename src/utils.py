@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import io
 import json
 from pathlib import Path
@@ -208,6 +209,7 @@ def run_async(coro):
     return _event_loop.run_until_complete(coro)
 
 
+@functools.lru_cache(maxsize=16)
 def load_precomputed(example_name: str) -> dict | None:
     """Load precomputed results for demo fallback."""
     base = Path("data/precomputed") / example_name

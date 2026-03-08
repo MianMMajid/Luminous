@@ -241,7 +241,7 @@ def _render_welcome_empty():
 
     # Claude Analysis tip
     st.markdown(
-        '<div style="text-align:center;margin:8px 0 16px;font-size:0.82rem;'
+        '<div style="text-align:center;margin:4px 0 8px;font-size:0.82rem;'
         'color:rgba(60,60,67,0.5);padding:0 16px;max-width:520px;margin-left:auto;margin-right:auto">'
         'Have CSV data? Head to the <b>Stats</b> tab for '
         '<span style="color:#648FFF;font-weight:600">Claude Analysis</span> '
