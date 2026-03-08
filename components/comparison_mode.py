@@ -170,7 +170,7 @@ def _load_from_precomputed():
         else:
             st.warning(
                 f"No precomputed data found for {selected}. "
-                f"Run a prediction for this variant in the **Query** tab first, "
+                f"Run a prediction for this variant in the **Search** tab first, "
                 f"or try one of the example queries."
             )
 

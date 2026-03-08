@@ -20,7 +20,7 @@ def render_structure_viewer():
     """Tab 2: 3D structure viewer with trust audit panel -- THE HERO SCREEN."""
     if not st.session_state.get("query_parsed"):
         st.info(
-            "No query loaded yet. Go to the **Query** tab and enter a protein to investigate. "
+            "No query loaded yet. Go to the **Search** tab and enter a protein to investigate. "
             "You can type a protein name (e.g. TP53), add a mutation (e.g. R248W), "
             "or try one of the example queries."
         )
@@ -455,16 +455,38 @@ def _load_precomputed_context(context_data: dict):
     """Load precomputed biological context into session state."""
     from src.models import BioContext, DiseaseAssociation, DrugCandidate, LiteratureSummary
 
-    st.session_state["bio_context"] = BioContext(
-        narrative=context_data.get("narrative", ""),
-        disease_associations=[
-            DiseaseAssociation(**d) for d in context_data.get("disease_associations", [])
-        ],
-        drugs=[DrugCandidate(**d) for d in context_data.get("drugs", [])],
-        literature=LiteratureSummary(**context_data.get("literature", {})),
-        pathways=context_data.get("pathways", []),
-        suggested_experiments=context_data.get("suggested_experiments", []),
-    )
+    try:
+        disease_assocs = []
+        for d in context_data.get("disease_associations", []):
+            try:
+                disease_assocs.append(DiseaseAssociation(**d))
+            except Exception:
+                pass
+
+        drugs = []
+        for d in context_data.get("drugs", []):
+            try:
+                drugs.append(DrugCandidate(**d))
+            except Exception:
+                pass
+
+        try:
+            literature = LiteratureSummary(**context_data.get("literature", {}))
+        except Exception:
+            literature = LiteratureSummary()
+
+        st.session_state["bio_context"] = BioContext(
+            narrative=context_data.get("narrative", ""),
+            disease_associations=disease_assocs,
+            drugs=drugs,
+            literature=literature,
+            pathways=context_data.get("pathways", []),
+            suggested_experiments=context_data.get("suggested_experiments", []),
+        )
+    except Exception:
+        st.session_state["bio_context"] = BioContext(
+            narrative=context_data.get("narrative", "Precomputed context (partial load)."),
+        )
 
 
 def _fetch_from_rcsb(query: ProteinQuery):
@@ -571,6 +593,8 @@ def _render_3d_viewer(
         "Trust (pLDDT)", "AlphaMissense", "Domains",
         "Flexibility (ANM)", "NMA Animation", "Binding Pockets",
         "Charge Surface", "Structure Diff",
+        "Conservation", "Hydrophobicity", "Residue Depth",
+        "PSN Communities",
     ]
     color_mode = st.radio(
         "Color by:",
@@ -600,6 +624,18 @@ def _render_3d_viewer(
         return
     elif color_mode == "Structure Diff":
         _render_structure_diff(query, prediction, trust_audit)
+        return
+    elif color_mode == "Conservation":
+        _render_conservation_overlay(query, prediction)
+        return
+    elif color_mode == "Hydrophobicity":
+        _render_hydrophobicity_overlay(query, prediction)
+        return
+    elif color_mode == "Residue Depth":
+        _render_depth_overlay(query, prediction)
+        return
+    elif color_mode == "PSN Communities":
+        _render_psn_overlay(query, prediction)
         return
 
     # Default: Trust coloring
@@ -1047,7 +1083,9 @@ def _render_pocket_overlay(
         pocket_rank = residue_to_pocket.get(res_id)
         if pocket_rank is not None:
             color = pocket_colors[(pocket_rank - 1) % len(pocket_colors)]
-            tooltip = f"Res {res_id}: Pocket {pocket_rank} (score {pocket_scores.get(res_id, 0):.2f})"
+            # Ensure int key lookup (pocket_scores may have string keys from JSON)
+            ps = pocket_scores.get(res_id, pocket_scores.get(str(res_id), 0))
+            tooltip = f"Res {res_id}: Pocket {pocket_rank} (score {ps:.2f})"
         else:
             color = "#333333"
             tooltip = f"Res {res_id}: no pocket"
@@ -1828,6 +1866,469 @@ def _render_domain_overlay(
         st.plotly_chart(fig, use_container_width=True)
 
     _render_provenance_badge(prediction)
+
+
+def _render_conservation_overlay(query: ProteinQuery, prediction: PredictionResult):
+    """Color structure by conservation score (1-9 ConSurf scale)."""
+    try:
+        from src.conservation import compute_conservation_scores
+        data = compute_conservation_scores(prediction.pdb_content)
+    except Exception as e:
+        st.warning(f"Conservation computation failed: {e}")
+        return
+
+    scores = data.get("conservation_scores", {})
+    if not scores:
+        st.info("No conservation data available.")
+        return
+
+    # ConSurf color scale: variable (cyan) → conserved (magenta)
+    _CONSURF_COLORS = {
+        1: "#00FFFF", 2: "#33D4E6", 3: "#66AACC",
+        4: "#997FB3", 5: "#996699", 6: "#B34D80",
+        7: "#CC3366", 8: "#E6194D", 9: "#FF0033",
+    }
+
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+    annotations = []
+    for res_id in prediction.residue_ids:
+        score = scores.get(res_id, 5)
+        color = _CONSURF_COLORS.get(score, "#996699")
+        annotations.append({
+            "label_asym_id": first_chain,
+            "label_seq_id": res_id,
+            "color": color,
+            "tooltip": f"Res {res_id}: conservation {score}/9"
+                       f" ({'highly conserved' if score >= 7 else 'variable' if score <= 3 else 'moderate'})",
+        })
+
+    _render_molstar_with_annotations(prediction, annotations)
+
+    # Legend
+    st.markdown(
+        '<div style="display:flex;gap:4px;align-items:center;margin-top:8px">'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Variable</span>'
+        + "".join(
+            f'<span style="display:inline-block;width:20px;height:12px;'
+            f'border-radius:2px;background:{_CONSURF_COLORS[i]}"></span>'
+            for i in range(1, 10)
+        )
+        + '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Conserved</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Stats
+    n_conserved = len(data.get("highly_conserved", []))
+    n_variable = len(data.get("variable", []))
+    patches = data.get("conserved_patches", [])
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Highly Conserved", f"{n_conserved} residues")
+    col2.metric("Variable", f"{n_variable} residues")
+    col3.metric("Conserved Patches", len(patches))
+
+    if query.mutation:
+        import re
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            mut_score = scores.get(mut_pos, 5)
+            if mut_score >= 7:
+                st.error(
+                    f"**{query.mutation}** is at a **highly conserved** position "
+                    f"(conservation {mut_score}/9) — mutations here are likely damaging."
+                )
+            elif mut_score <= 3:
+                st.success(
+                    f"**{query.mutation}** is at a **variable** position "
+                    f"(conservation {mut_score}/9) — may be tolerated."
+                )
+
+    _render_provenance_badge(prediction)
+
+
+def _render_hydrophobicity_overlay(query: ProteinQuery, prediction: PredictionResult):
+    """Color structure by Kyte-Doolittle hydrophobicity."""
+    try:
+        from src.surface_properties import compute_surface_properties
+        data = compute_surface_properties(prediction.pdb_content)
+    except Exception as e:
+        st.warning(f"Surface property computation failed: {e}")
+        return
+
+    hydro = data.get("hydrophobicity_smoothed", {})
+    if not hydro:
+        st.info("No hydrophobicity data available.")
+        return
+
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+    annotations = []
+    for res_id in prediction.residue_ids:
+        val = hydro.get(res_id, 0.0)
+        # Scale: -4.5 (hydrophilic/blue) → +4.5 (hydrophobic/orange)
+        norm = (val + 4.5) / 9.0  # 0-1
+        norm = max(0, min(1, norm))
+        r = int(50 + 180 * norm)
+        g = int(130 - 50 * norm)
+        b = int(220 - 180 * norm)
+        color = f"#{r:02x}{g:02x}{b:02x}"
+        label = "hydrophobic" if val > 0.5 else "hydrophilic" if val < -0.5 else "neutral"
+        annotations.append({
+            "label_asym_id": first_chain,
+            "label_seq_id": res_id,
+            "color": color,
+            "tooltip": f"Res {res_id}: KD={val:+.1f} ({label})",
+        })
+
+    _render_molstar_with_annotations(prediction, annotations)
+
+    # Legend
+    st.markdown(
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Hydrophilic</span>'
+        '<span style="display:inline-block;width:100px;height:12px;border-radius:2px;'
+        'background:linear-gradient(to right,#3282DC,#966645,#E6500A)"></span>'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Hydrophobic</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Patch summary
+    patches = data.get("hydrophobic_patches", [])
+    summary = data.get("summary", {})
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Surface Net Charge", f"{summary.get('surface_net_charge', 0):+.1f}")
+    col2.metric("Hydrophobic Patches", len(patches))
+    col3.metric("Surface %", f"{summary.get('pct_surface', 0):.0%}")
+
+    if patches:
+        st.caption(f"Hydrophobic patches (potential binding sites): "
+                   + ", ".join(f"{p['start']}-{p['end']}" for p in patches[:5]))
+
+    _render_provenance_badge(prediction)
+
+
+def _render_depth_overlay(query: ProteinQuery, prediction: PredictionResult):
+    """Color structure by residue depth (distance to surface)."""
+    try:
+        from src.residue_depth import compute_residue_depth
+        data = compute_residue_depth(prediction.pdb_content)
+    except Exception as e:
+        st.warning(f"Depth computation failed: {e}")
+        return
+
+    depth = data.get("depth", {})
+    depth_norm = data.get("depth_normalized", {})
+    if not depth:
+        st.info("No depth data available.")
+        return
+
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+    annotations = []
+    for res_id in prediction.residue_ids:
+        d = depth_norm.get(res_id, 0.0)
+        # Surface (white/teal) → Deep core (dark blue)
+        r = int(230 - 200 * d)
+        g = int(245 - 190 * d)
+        b = int(250 - 100 * d)
+        color = f"#{max(0,r):02x}{max(0,g):02x}{max(0,b):02x}"
+        raw_d = depth.get(res_id, 0.0)
+        zone = "deep core" if raw_d > 8 else "intermediate" if raw_d > 4 else "surface"
+        annotations.append({
+            "label_asym_id": first_chain,
+            "label_seq_id": res_id,
+            "color": color,
+            "tooltip": f"Res {res_id}: depth {raw_d:.1f} Å ({zone})",
+        })
+
+    _render_molstar_with_annotations(prediction, annotations)
+
+    # Legend
+    st.markdown(
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Surface</span>'
+        '<span style="display:inline-block;width:100px;height:12px;border-radius:2px;'
+        'background:linear-gradient(to right,#E6F5FA,#1E3796)"></span>'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">Deep Core</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    summary = data.get("summary", {})
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Deep Core", f"{summary.get('n_deep_core', 0)} residues")
+    col2.metric("Intermediate", f"{summary.get('n_intermediate', 0)} residues")
+    col3.metric("Max Depth", f"{summary.get('max_depth', 0):.1f} Å")
+
+    if query.mutation:
+        import re
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            mut_depth = depth.get(mut_pos, 0)
+            if mut_depth > 8:
+                st.error(
+                    f"**{query.mutation}** is in the **deep core** ({mut_depth:.1f} Å) — "
+                    "mutations here are highly destabilizing."
+                )
+            elif mut_depth > 4:
+                st.warning(
+                    f"**{query.mutation}** is at **intermediate** depth ({mut_depth:.1f} Å) — "
+                    "may affect stability or interface contacts."
+                )
+
+    _render_provenance_badge(prediction)
+
+
+def _render_psn_overlay(query: ProteinQuery, prediction: PredictionResult):
+    """Color structure by Protein Structure Network community + show network graph."""
+    try:
+        from src.protein_network import build_protein_network
+        data = build_protein_network(prediction.pdb_content)
+    except Exception as e:
+        st.warning(f"PSN computation failed: {e}")
+        return
+
+    communities = data.get("communities", [])
+    betweenness = data.get("betweenness", {})
+    bridge_residues = {b["residue"] for b in data.get("bridge_residues", [])}
+    hub_residues = {h["residue"] for h in data.get("hub_residues", [])}
+
+    if not communities:
+        st.info("No structural communities detected.")
+        return
+
+    # Assign colors to communities
+    _COMMUNITY_COLORS = [
+        "#007AFF", "#FF3B30", "#34C759", "#FF9500", "#AF52DE",
+        "#FF2D55", "#5856D6", "#00C7BE", "#FF6482", "#32D74B",
+    ]
+    res_to_community: dict[int, int] = {}
+    for c in communities:
+        for r in c["members"]:
+            res_to_community[r] = c["id"]
+
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+    annotations = []
+    for res_id in prediction.residue_ids:
+        comm_id = res_to_community.get(res_id)
+        if comm_id is not None:
+            color = _COMMUNITY_COLORS[comm_id % len(_COMMUNITY_COLORS)]
+        else:
+            color = "#555555"
+
+        # Mark hubs and bridges
+        role = ""
+        if res_id in bridge_residues:
+            role = " [BRIDGE]"
+        elif res_id in hub_residues:
+            role = " [HUB]"
+        bc = betweenness.get(res_id, 0)
+
+        annotations.append({
+            "label_asym_id": first_chain,
+            "label_seq_id": res_id,
+            "color": color,
+            "tooltip": f"Res {res_id}: Community {comm_id if comm_id is not None else '?'}"
+                       f" | BC={bc:.4f}{role}",
+        })
+
+    _render_molstar_with_annotations(prediction, annotations)
+
+    # Community legend
+    legend_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">'
+    for c in communities[:8]:
+        color = _COMMUNITY_COLORS[c["id"] % len(_COMMUNITY_COLORS)]
+        legend_html += (
+            f'<span style="display:inline-flex;align-items:center;gap:4px;'
+            f'font-size:0.82em;color:rgba(60,60,67,0.6)">'
+            f'<span style="display:inline-block;width:10px;height:10px;'
+            f'border-radius:50%;background:{color}"></span>'
+            f'Module {c["id"]} ({c["size"]} res)</span>'
+        )
+    legend_html += "</div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
+
+    # Stats
+    stats = data.get("graph_stats", {})
+    summary = data.get("summary", {})
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Communities", len(communities))
+    col2.metric("Hub Residues", summary.get("n_hubs", 0))
+    col3.metric("Bridge Residues", summary.get("n_bridges", 0))
+    col4.metric("Network Density", f"{stats.get('density', 0):.3f}")
+
+    # PSN network graph visualization
+    _render_psn_graph(data, query)
+
+    _render_provenance_badge(prediction)
+
+
+def _render_psn_graph(psn_data: dict, query: ProteinQuery):
+    """Render an interactive Plotly force-directed graph of the PSN."""
+    import plotly.graph_objects as go
+
+    communities = psn_data.get("communities", [])
+    betweenness = psn_data.get("betweenness", {})
+    degree = psn_data.get("degree", {})
+    hub_set = {h["residue"] for h in psn_data.get("hub_residues", [])}
+    bridge_set = {b["residue"] for b in psn_data.get("bridge_residues", [])}
+    res_ids = psn_data.get("residue_ids", [])
+
+    if not communities or not res_ids:
+        return
+
+    # Build community membership lookup
+    _COMM_COLORS = [
+        "#007AFF", "#FF3B30", "#34C759", "#FF9500", "#AF52DE",
+        "#FF2D55", "#5856D6", "#00C7BE", "#FF6482", "#32D74B",
+    ]
+    res_to_comm: dict[int, int] = {}
+    for c in communities:
+        for r in c["members"]:
+            res_to_comm[r] = c["id"]
+
+    # Use betweenness for y-position (high BC = top), sequence position for x
+    # This creates a "landscape" view where hubs rise above the baseline
+    min_rid, max_rid = min(res_ids), max(res_ids)
+    span = max_rid - min_rid or 1
+
+    bc_vals = list(betweenness.values())
+    max_bc = max(bc_vals) if bc_vals else 1
+
+    # Position residues
+    x_pos = {r: (r - min_rid) / span for r in res_ids}
+    y_pos = {r: betweenness.get(r, 0) / max_bc if max_bc > 0 else 0 for r in res_ids}
+
+    # Sample for large proteins (show every Nth residue + all hubs/bridges)
+    important = hub_set | bridge_set
+    if query.mutation:
+        import re
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            important.add(int(m.group(1)))
+
+    if len(res_ids) > 150:
+        step = len(res_ids) // 100
+        sampled = set(res_ids[::step]) | important
+    else:
+        sampled = set(res_ids)
+
+    # Node traces (one per community for legend)
+    for c in communities:
+        members_in_sample = [r for r in c["members"] if r in sampled]
+        if not members_in_sample:
+            continue
+
+        color = _COMM_COLORS[c["id"] % len(_COMM_COLORS)]
+        sizes = []
+        symbols = []
+        labels = []
+        for r in members_in_sample:
+            bc = betweenness.get(r, 0)
+            # Size: 4-16 based on degree centrality
+            d = degree.get(r, 0)
+            sz = 4 + 12 * d
+            sizes.append(sz)
+            if r in bridge_set:
+                symbols.append("diamond")
+                labels.append(f"Res {r} [BRIDGE] BC={bc:.4f}")
+            elif r in hub_set:
+                symbols.append("star")
+                labels.append(f"Res {r} [HUB] BC={bc:.4f}")
+            else:
+                symbols.append("circle")
+                labels.append(f"Res {r} BC={bc:.4f}")
+
+        fig_data = go.Scatter(
+            x=[x_pos[r] for r in members_in_sample],
+            y=[y_pos[r] for r in members_in_sample],
+            mode="markers",
+            marker=dict(
+                size=sizes,
+                color=color,
+                symbol=symbols,
+                line=dict(width=0.5, color="rgba(0,0,0,0.3)"),
+            ),
+            text=labels,
+            hoverinfo="text",
+            name=f"Module {c['id']} ({c['size']})",
+        )
+        if "_psn_fig" not in st.session_state:
+            st.session_state["_psn_fig"] = go.Figure()
+        st.session_state["_psn_fig"].add_trace(fig_data)
+
+    fig = go.Figure()
+    # Re-add traces properly
+    for c in communities:
+        members_in_sample = [r for r in c["members"] if r in sampled]
+        if not members_in_sample:
+            continue
+        color = _COMM_COLORS[c["id"] % len(_COMM_COLORS)]
+        sizes = [4 + 12 * degree.get(r, 0) for r in members_in_sample]
+        symbols = [
+            "diamond" if r in bridge_set else "star" if r in hub_set else "circle"
+            for r in members_in_sample
+        ]
+        labels = [
+            f"Res {r}"
+            + (" [BRIDGE]" if r in bridge_set else " [HUB]" if r in hub_set else "")
+            + f" | BC={betweenness.get(r, 0):.4f}"
+            for r in members_in_sample
+        ]
+        fig.add_trace(go.Scatter(
+            x=[x_pos[r] for r in members_in_sample],
+            y=[y_pos[r] for r in members_in_sample],
+            mode="markers",
+            marker=dict(size=sizes, color=color, symbol=symbols,
+                        line=dict(width=0.5, color="rgba(0,0,0,0.3)")),
+            text=labels, hoverinfo="text",
+            name=f"Module {c['id']} ({c['size']})",
+        ))
+
+    # Mutation marker
+    if query.mutation:
+        import re
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            if mut_pos in x_pos:
+                fig.add_trace(go.Scatter(
+                    x=[x_pos[mut_pos]], y=[y_pos[mut_pos]],
+                    mode="markers+text",
+                    marker=dict(size=18, color="#FF3B30", symbol="x",
+                                line=dict(width=2, color="#FF3B30")),
+                    text=[query.mutation], textposition="top center",
+                    textfont=dict(size=11, color="#FF3B30"),
+                    hoverinfo="text",
+                    hovertext=f"{query.mutation} | BC={betweenness.get(mut_pos, 0):.4f}",
+                    name="Mutation",
+                    showlegend=True,
+                ))
+
+    fig.update_layout(
+        title="Protein Structure Network — Allosteric Landscape",
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=350,
+        margin=dict(t=40, b=40, l=40, r=20),
+        xaxis=dict(title="Sequence Position", showgrid=False,
+                   tickformat="d", gridcolor="rgba(0,0,0,0.05)"),
+        yaxis=dict(title="Betweenness Centrality (allosteric importance)",
+                   showgrid=True, gridcolor="rgba(0,0,0,0.08)"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="left", x=0, font=dict(size=10)),
+        font=dict(family="Inter, system-ui, sans-serif"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True, key="psn_landscape_chart")
+
+    st.caption(
+        "Each dot is a residue. Height = allosteric importance (betweenness centrality). "
+        "Colors = structural communities (functional modules). "
+        "Stars = hub residues. Diamonds = bridge residues (communication bottlenecks)."
+    )
 
 
 def _render_molstar_with_annotations(prediction: PredictionResult, annotations: list[dict]):

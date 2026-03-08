@@ -1,4 +1,4 @@
-"""Playground tab — interactive workspace for comparing, overlaying, and exploring insights.
+"""Workspace tab — interactive workspace for comparing, overlaying, and exploring insights.
 
 Features:
 1. **Pin system** — collect insights from other tabs into the workspace
@@ -104,7 +104,7 @@ def pin_button(
         )
         return False
 
-    if st.button(f"\u2606 Save", key=btn_key, help="Save this insight to the Playground"):
+    if st.button(f"\u2606 Save", key=btn_key, help="Save this insight to the Workspace"):
         pin_insight(title, summary, insight_type, data, chart_json)
         return True
     return False
@@ -121,7 +121,7 @@ def render_playground():
 
     st.markdown(
         '<div style="margin-bottom:16px">'
-        '<span style="font-size:1.4rem;font-weight:700">Playground</span>'
+        '<span style="font-size:1.4rem;font-weight:700">Workspace</span>'
         '<span style="font-size:0.9rem;color:rgba(60,60,67,0.5);margin-left:10px">'
         "Compare, overlay, and explore your collected insights"
         "</span></div>",
@@ -193,7 +193,7 @@ def _render_empty_state():
         '<div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">'
         "Your workspace is empty</div>"
         '<div style="font-size:0.9rem;max-width:400px;margin:0 auto">'
-        "Pin insights from the <b>Structure & Trust</b>, <b>Biological Context</b>, "
+        "Pin insights from the <b>Structure</b>, <b>Biology</b>, "
         "and <b>Report</b> tabs using the <em>Pin to Workspace</em> buttons. "
         "Then come back here to compare, overlay, and build experiment plans."
         "</div></div>",
@@ -487,7 +487,7 @@ def _render_overlay_view(pinned: list[dict]):
         xaxis_title="Residue Number",
         yaxis_title="Value",
         legend=dict(orientation="h", y=-0.15),
-        font=dict(family="'Plus Jakarta Sans', Inter, system-ui, sans-serif"),
+        font=dict(family="Nunito, system-ui, sans-serif"),
     )
 
     st.plotly_chart(fig, use_container_width=True, key="overlay_chart")
@@ -550,7 +550,7 @@ def _run_inspire(query: ProteinQuery | None, pinned: list[dict]):
 def _run_plan_generation(query: ProteinQuery | None, pinned: list[dict]):
     """Generate an experiment plan from pinned insights."""
     if not query:
-        st.warning("Enter a query in the Query tab first.")
+        st.warning("Enter a query in the Search tab first.")
         return
 
     with st.spinner("Generating experiment plan..."):

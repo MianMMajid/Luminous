@@ -25,7 +25,7 @@ def render_chat_followup():
     header_col, toggle_col = st.columns([3, 1])
     with header_col:
         st.markdown(
-            f"### Ask Lumi about {query.protein_name}"
+            f"### Lumi — {query.protein_name}"
         )
     with toggle_col:
         if "agent_mode_toggle" not in st.session_state:
@@ -77,7 +77,7 @@ def render_chat_followup():
         _render_chat_bubbles(st.session_state["chat_messages"])
 
     # Chat input (Streamlit's built-in, pinned to bottom)
-    if prompt := st.chat_input(f"Ask Lumi about {query.protein_name}..."):
+    if prompt := st.chat_input(f"Ask about {query.protein_name}..."):
         st.session_state["chat_messages"].append({"role": "user", "content": prompt})
 
         # Show typing indicator then generate response
@@ -149,7 +149,7 @@ def _render_welcome_empty():
         'nous'
         '</div>'
         '<p class="lumi-welcome-sub">'
-        "I'm Lumi, your assistant scientist. Load a protein in the <b>Query</b> tab "
+        "I'm Lumi, your assistant scientist. Load a protein in the <b>Search</b> tab "
         "for full structural analysis, or ask me anything below — I can query UniProt, "
         "AlphaFold, gnomAD, PubChem, STRING, and more in real time."
         "</p>"
@@ -808,7 +808,7 @@ def _render_standalone_chat():
         _render_chat_bubbles(st.session_state["chat_messages"])
 
     # Chat input
-    if prompt := st.chat_input("Ask Lumi anything about proteins, drugs, variants..."):
+    if prompt := st.chat_input("Ask anything about proteins, drugs, variants..."):
         st.session_state["chat_messages"].append({"role": "user", "content": prompt})
         with st.spinner("Lumi is thinking..."):
             _generate_standalone_agent_response()

@@ -239,7 +239,7 @@ def _render_from_analysis_entry():
 
     if not prediction and not trust_audit and not bio_context:
         st.info(
-            "No analysis data available. Run a protein query in the **Query** tab first, "
+            "No analysis data available. Run a protein query in the **Search** tab first, "
             "or use one of the other data entry modes."
         )
         return

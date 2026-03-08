@@ -16,14 +16,14 @@ def render_report_export():
     """Tab 4: Report generation, Plotly figures, and downloads."""
     if not st.session_state.get("query_parsed") or not st.session_state.get("prediction_result"):
         st.info(
-            "Complete **Query** → **Structure & Trust** → **Biological Context** first, "
+            "Complete **Search** → **Structure** → **Biology** first, "
             "then come back here to export your results."
         )
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
     if query is None:
-        st.warning("No query data. Go to the Query tab first.")
+        st.warning("No query data. Go to the Search tab first.")
         return
     prediction: PredictionResult | None = st.session_state.get("prediction_result")
     trust_audit: TrustAudit | None = st.session_state.get("trust_audit")
@@ -135,7 +135,7 @@ def render_report_export():
 
     # --- PDF Report (hero download) ---
     st.markdown("#### Download Full Report")
-    _render_pdf_download(query, prediction, trust_audit, bio_context, interpretation)
+    _render_pdf_download(query, prediction, trust_audit, bio_context, interpretation, key_suffix="_full")
 
     st.divider()
 
@@ -221,6 +221,7 @@ def _render_pdf_download(
     trust_audit: TrustAudit | None,
     bio_context: BioContext | None,
     interpretation: str | None,
+    key_suffix: str = "",
 ):
     """Render the PDF download section with generate button."""
     pdf_key = f"pdf_bytes_{query.protein_name}"
@@ -232,7 +233,7 @@ def _render_pdf_download(
             "Generate PDF Report",
             type="primary",
             use_container_width=True,
-            key="gen_pdf",
+            key=f"gen_pdf{key_suffix}",
         ):
             with st.spinner("Generating PDF report..."):
                 try:
@@ -269,7 +270,7 @@ def _render_pdf_download(
                 f"Luminous_{query.protein_name}{mut_str}_report.pdf",
                 mime="application/pdf",
                 use_container_width=True,
-                key="dl_pdf",
+                key=f"dl_pdf{key_suffix}",
             )
             size_kb = len(pdf_bytes) / 1024
             st.caption(f"Report ready ({size_kb:.0f} KB)")
@@ -811,9 +812,9 @@ def _render_biorender_section(query: ProteinQuery):
     )
 
     checklist_key = "figure_checklist_state"
-    if checklist_key not in st.session_state:
+    if not st.session_state.get(checklist_key):
         st.session_state[checklist_key] = {}
-    check_state: dict[str, bool] = st.session_state[checklist_key]
+    check_state: dict[str, bool] = st.session_state[checklist_key] or {}
 
     # Group by category
     categories: dict[str, list[dict]] = {}
@@ -857,10 +858,10 @@ def _render_experiment_tracker(
     st.markdown("#### Experiment Tracker")
 
     # Initialize experiment tracker in session state
-    if "experiment_tracker" not in st.session_state:
+    if not st.session_state.get("experiment_tracker"):
         st.session_state["experiment_tracker"] = {}
 
-    tracker: dict[str, bool] = st.session_state["experiment_tracker"]
+    tracker: dict[str, bool] = st.session_state["experiment_tracker"] or {}
 
     # Collect suggested experiments from trust audit and bio context
     suggested: list[str] = []
@@ -925,6 +926,8 @@ def _render_experiment_tracker(
     with col_btn:
         if st.button("Add Experiment", key="add_experiment_btn", use_container_width=True):
             if new_exp and new_exp.strip():
+                if st.session_state.get("experiment_tracker") is None:
+                    st.session_state["experiment_tracker"] = {}
                 st.session_state["experiment_tracker"][new_exp.strip()] = False
                 st.rerun()
 
@@ -1154,7 +1157,7 @@ def _build_html_report(
   }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: var(--bg);
     color: var(--text);
     line-height: 1.6;

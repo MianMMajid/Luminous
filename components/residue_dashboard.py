@@ -629,8 +629,9 @@ def _add_centrality_track(
     # Mark hub residues
     hubs = analysis.get("hub_residues", [])
     if hubs:
-        hub_x = [h["residue"] for h in hubs if h["residue"] in set(residue_ids)]
-        hub_y = [centrality.get(h["residue"], 0) for h in hubs if h["residue"] in set(residue_ids)]
+        rid_set = set(residue_ids)
+        hub_x = [h.get("residue") for h in hubs if isinstance(h, dict) and h.get("residue") in rid_set]
+        hub_y = [centrality.get(r, 0) for r in hub_x]
         fig.add_trace(
             go.Scatter(
                 x=hub_x,
@@ -996,9 +997,14 @@ def _add_pocket_track(
     data = _get_pocket_data()
     if not data:
         return
-    scores = data.get("residue_pocket_scores", {})
-    if not scores:
+    raw_scores = data.get("residue_pocket_scores", {})
+    if not raw_scores:
         return
+    # Ensure int keys (JSON roundtrip may leave string keys)
+    scores = {
+        int(k) if isinstance(k, str) and k.isdigit() else k: v
+        for k, v in raw_scores.items()
+    }
 
     vals = [scores.get(r, 0.0) for r in residue_ids]
 
@@ -1086,8 +1092,10 @@ def _add_ramachandran_track(
     # Build residue → classification map
     rama_class: dict[int, str] = {}
     for r in rama:
-        rid = r["residue"]
-        phi, psi = r["phi"], r["psi"]
+        rid = r.get("residue")
+        phi, psi = r.get("phi"), r.get("psi")
+        if rid is None or phi is None or psi is None:
+            continue
         if _rama_is_favored(phi, psi):
             rama_class[rid] = "favored"
         elif _rama_is_allowed(phi, psi):
