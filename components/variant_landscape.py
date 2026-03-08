@@ -36,23 +36,84 @@ def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
     cache_key = f"variant_data_{query.protein_name}"
     variant_data = st.session_state.get(cache_key)
 
+    attempt_key = f"_variant_fetch_attempted_{query.protein_name}"
+
+    if variant_data is None and not st.session_state.get(attempt_key, False):
+        st.session_state[attempt_key] = True
+        from src.task_manager import task_manager
+        from src.variant_analyzer import fetch_variant_landscape
+
+        def _fetch(q):
+            return {"variant_data": fetch_variant_landscape(q), "cache_key": cache_key}
+
+        task_manager.submit(
+            "variant_landscape",
+            _fetch,
+            args=(query,),
+            label="Querying ClinVar & OncoKB",
+        )
+
+    # Check if background task is running
+    from src.task_manager import task_manager as _tm
+    vl_status = _tm.status("variant_landscape")
+    if vl_status and vl_status.value == "running":
+        st.info("Querying ClinVar & OncoKB in the background...")
+        return
+
+    # Pick up completed result
+    vl_result = _tm.get_result("variant_landscape")
+    if vl_result and variant_data is None:
+        variant_data = vl_result.get("variant_data")
+        ck = vl_result.get("cache_key", cache_key)
+        st.session_state[ck] = variant_data
+
     if variant_data is None:
-        if st.button("Analyze Known Variants", key="var_fetch", type="primary"):
-            with st.spinner("Querying ClinVar & OncoKB via BioMCP..."):
-                from src.variant_analyzer import fetch_variant_landscape
-                variant_data = fetch_variant_landscape(query)
-                st.session_state[cache_key] = variant_data
-                st.rerun()
+        if st.button("Retry Variant Analysis", key="var_fetch", type="primary"):
+            st.session_state[attempt_key] = False
         else:
             st.info(
-                f"Click to fetch known pathogenic variants for {query.protein_name} "
-                "from ClinVar and OncoKB databases."
+                f"Auto-fetch for {query.protein_name} variants did not return data. "
+                "Click above to retry."
             )
             return
 
     if not isinstance(variant_data, dict) or not variant_data.get("variants"):
         st.info(variant_data.get("summary", "No variant data found."))
         return
+
+    # Enrich variants with myvariant.info (CADD, gnomAD, SIFT, PolyPhen-2, etc.)
+    enrichment_key = f"variant_enrichment_{query.protein_name}"
+    if st.session_state.get(enrichment_key) is None:
+        try:
+            from src.variant_enrichment import enrich_variants
+            positions = [v.get("position") for v in variant_data.get("variants", []) if v.get("position")]
+            positions = [int(p) for p in positions if p is not None]
+            if positions:
+                enrichment = enrich_variants(query.protein_name, positions)
+                st.session_state[enrichment_key] = enrichment
+                # Merge enrichment data back into variants
+                enriched = enrichment.get("enriched", {})
+                if enriched:
+                    for v in variant_data.get("variants", []):
+                        pos = v.get("position")
+                        if pos and int(pos) in enriched:
+                            edata = enriched[int(pos)]
+                            if "cadd_phred" in edata and v.get("cadd_score") is None:
+                                v["cadd_score"] = edata["cadd_phred"]
+                            if "gnomad_af" in edata and v.get("frequency") is None:
+                                v["frequency"] = edata["gnomad_af"]
+                            if "clinvar_significance" in edata and not v.get("significance"):
+                                v["significance"] = edata["clinvar_significance"]
+                            if "sift_pred" in edata:
+                                v["sift_pred"] = edata["sift_pred"]
+                            if "polyphen2_pred" in edata:
+                                v["polyphen2_pred"] = edata["polyphen2_pred"]
+                            if "revel_score" in edata:
+                                v["revel_score"] = edata["revel_score"]
+                            if "cosmic_id" in edata:
+                                v["cosmic_id"] = edata["cosmic_id"]
+        except Exception:
+            pass  # Enrichment is best-effort
 
     # Summary metrics
     _render_variant_summary(variant_data)
@@ -85,8 +146,29 @@ def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
     # Variant-structure overlay chart
     _render_variant_structure_chart(query, prediction, filtered_data, plddt_range)
 
+    # Lollipop variant plot (ProteinPaint-style)
+    _render_lollipop_plot(query, prediction, filtered_data)
+
     # Variant table
     _render_variant_table(filtered_data)
+
+    # Enrichment source badge
+    enrichment = st.session_state.get(f"variant_enrichment_{query.protein_name}")
+    if enrichment and enrichment.get("sources"):
+        sources = enrichment["sources"]
+        n_enriched = enrichment.get("n_enriched", 0)
+        badge_parts = " ".join(
+            f'<span style="background:#F2F2F7;border:1px solid rgba(0,0,0,0.06);'
+            f'padding:1px 6px;border-radius:10px;font-size:0.7em;'
+            f'color:rgba(60,60,67,0.55)">{s}</span>'
+            for s in sources
+        )
+        st.markdown(
+            f'<div style="margin-top:4px">'
+            f'<span style="font-size:0.75em;color:rgba(60,60,67,0.45)">'
+            f'Enriched {n_enriched} positions via myvariant.info: </span>{badge_parts}</div>',
+            unsafe_allow_html=True,
+        )
 
     # Store for hypothesis engine
     return variant_data
@@ -289,12 +371,30 @@ def _render_variant_severity_scatter(variant_data: dict):
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    selection = st.plotly_chart(
+        fig, use_container_width=True, key="variant_severity_scatter",
+        on_select="rerun",
+    )
+
+    # Capture selected points for cross-filtering
+    if selection and selection.get("selection", {}).get("points"):
+        sel_points = selection["selection"]["points"]
+        # Store selected variant positions
+        sel_positions = set()
+        for pt in sel_points:
+            hover = pt.get("text", "")
+            if "Position:" in hover:
+                import re
+                pos_match = re.search(r"Position:\s*(\d+)", hover)
+                if pos_match:
+                    sel_positions.add(int(pos_match.group(1)))
+        if sel_positions:
+            st.session_state["selected_residues"] = sorted(sel_positions)
 
     st.caption(
         "CADD pathogenicity score vs population frequency — ultra-rare + high CADD "
         "= strongest pathogenic signal. Bubble size reflects structural prediction "
-        "confidence (pLDDT)."
+        "confidence (pLDDT). Select points to cross-filter with other panels."
     )
 
     if freq_defaulted_count:
@@ -446,7 +546,7 @@ def _render_variant_structure_chart(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="variant_structure_chart")
 
     # Dynamic summary
     if path_x:
@@ -500,12 +600,274 @@ def _render_variant_table(variant_data: dict):
             else:
                 freq_str = ""
 
+            # Enrichment annotations (from myvariant.info)
+            enrich_parts = []
+            if v.get("sift_pred"):
+                sift_color = "#E00000" if v["sift_pred"] == "D" else "#34C759"
+                sift_label = "Damaging" if v["sift_pred"] == "D" else "Tolerated"
+                enrich_parts.append(f'<span style="background:#F2F2F7;border:1px solid rgba(0,0,0,0.06);padding:0 4px;border-radius:4px;font-size:0.78em;color:{sift_color}">SIFT: {sift_label}</span>')
+            if v.get("polyphen2_pred"):
+                pp2_map = {"D": ("Damaging", "#E00000"), "P": ("Possibly Dam.", "#FF9500"), "B": ("Benign", "#34C759")}
+                pp2_label, pp2_color = pp2_map.get(v["polyphen2_pred"], (v["polyphen2_pred"], "#888"))
+                enrich_parts.append(f'<span style="background:#F2F2F7;border:1px solid rgba(0,0,0,0.06);padding:0 4px;border-radius:4px;font-size:0.78em;color:{pp2_color}">PP2: {pp2_label}</span>')
+            if v.get("revel_score") is not None:
+                revel_color = "#E00000" if v["revel_score"] > 0.5 else "#34C759"
+                enrich_parts.append(f'<span style="background:#F2F2F7;border:1px solid rgba(0,0,0,0.06);padding:0 4px;border-radius:4px;font-size:0.78em;color:{revel_color}">REVEL: {v["revel_score"]:.2f}</span>')
+            if v.get("cosmic_id"):
+                enrich_parts.append(f'<span style="background:#F2F2F7;border:1px solid rgba(175,82,222,0.3);padding:0 4px;border-radius:4px;font-size:0.78em;color:#AF52DE">COSMIC</span>')
+            enrich_str = " ".join(enrich_parts)
+            if enrich_str:
+                enrich_str = " " + enrich_str
+
             st.markdown(
                 f'<div style="padding:6px 10px;border-left:3px solid {sig_color};'
                 f'background:rgba(242,242,247,0.6);border-radius:0 6px 6px 0;margin-bottom:4px">'
                 f'<span style="font-weight:600">{v.get("name", "?")}</span>'
                 f' <span style="color:rgba(60,60,67,0.6);font-size:0.85em">pos {v.get("position", "?")}</span>'
                 f' <span style="color:{sig_color};font-size:0.82em;font-weight:600">'
-                f'{sig_label}</span>{disease_str}{cadd_str}{freq_str}</div>',
+                f'{sig_label}</span>{disease_str}{cadd_str}{freq_str}{enrich_str}</div>',
                 unsafe_allow_html=True,
             )
+
+
+def _render_lollipop_plot(
+    query: ProteinQuery,
+    prediction: PredictionResult,
+    variant_data: dict,
+):
+    """ProteinPaint-style lollipop diagram — the gold standard for clinical variant visualization.
+
+    Each variant is a circle on a stick at its protein position. Height = CADD score
+    (severity), color = clinical significance, size = allele frequency (if available).
+    Domain annotations run as colored bars underneath.
+    """
+    variants = variant_data.get("variants", [])
+    if not variants:
+        return
+
+    # Parse positions and scores
+    positions = []
+    heights = []
+    colors = []
+    labels = []
+    sizes = []
+
+    _SIG_COLORS = {
+        "pathogenic": "#FF3B30",
+        "likely_pathogenic": "#FF9500",
+        "uncertain_significance": "#8E8E93",
+        "likely_benign": "#34C759",
+        "benign": "#007AFF",
+    }
+
+    for v in variants:
+        pos = v.get("position")
+        if pos is None:
+            continue
+        try:
+            pos = int(pos)
+        except (ValueError, TypeError):
+            continue
+
+        cadd = v.get("cadd_score", v.get("score", 15))
+        if cadd is None:
+            cadd = 15
+        try:
+            cadd = float(cadd)
+        except (ValueError, TypeError):
+            cadd = 15
+
+        sig = v.get("significance", "").lower().replace(" ", "_")
+        color = _SIG_COLORS.get(sig, "#8E8E93")
+
+        freq = v.get("allele_frequency", 0.01)
+        try:
+            freq = float(freq) if freq else 0.01
+        except (ValueError, TypeError):
+            freq = 0.01
+        # Size: rarer variants = bigger dots (more noteworthy)
+        import math
+        dot_size = max(6, min(18, 8 + 3 * (-math.log10(freq + 1e-6) if freq > 0 else 5)))
+
+        name = v.get("name", f"pos {pos}")
+        positions.append(pos)
+        heights.append(cadd)
+        colors.append(color)
+        sizes.append(dot_size)
+        labels.append(name)
+
+    if not positions:
+        return
+
+    st.markdown("##### Variant Lollipop Diagram")
+
+    fig = go.Figure()
+
+    # Domain bars at bottom (if we have domain data)
+    domains = st.session_state.get(f"domains_{query.protein_name}", [])
+    if domains and isinstance(domains, list):
+        _DOMAIN_COLORS = [
+            "#007AFF", "#34C759", "#FF9500", "#AF52DE",
+            "#FF2D55", "#5856D6", "#30B0C7", "#FF6482",
+        ]
+        for idx, d in enumerate(domains):
+            d_start = d.get("start", 0)
+            d_end = d.get("end", 0)
+            d_name = d.get("name", "")
+            d_color = _DOMAIN_COLORS[idx % len(_DOMAIN_COLORS)]
+            fig.add_trace(go.Bar(
+                x=[d_end - d_start],
+                y=[-2],
+                base=d_start,
+                orientation="h",
+                marker_color=d_color,
+                marker_line_color="white",
+                marker_line_width=0.5,
+                showlegend=False,
+                hovertemplate=f"<b>{d_name}</b><br>Res {d_start}-{d_end}<extra></extra>",
+                width=3,
+            ))
+            # Domain label
+            mid = (d_start + d_end) / 2
+            fig.add_annotation(
+                x=mid, y=-2, text=d_name[:15],
+                showarrow=False, font=dict(size=8, color="white"),
+            )
+
+    # Protein backbone line
+    max_res = max(prediction.residue_ids) if prediction.residue_ids else max(positions)
+    fig.add_trace(go.Scatter(
+        x=[0, max_res],
+        y=[0, 0],
+        mode="lines",
+        line=dict(color="rgba(0,0,0,0.3)", width=3),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Lollipop stems
+    for pos, h in zip(positions, heights):
+        fig.add_trace(go.Scatter(
+            x=[pos, pos],
+            y=[0, h],
+            mode="lines",
+            line=dict(color="rgba(0,0,0,0.15)", width=1),
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+
+    # Lollipop heads — group by significance for legend
+    sig_groups = {}
+    for i, (pos, h, col, sz, lbl) in enumerate(zip(positions, heights, colors, sizes, labels)):
+        sig = next((k for k, v in _SIG_COLORS.items() if v == col), "other")
+        if sig not in sig_groups:
+            sig_groups[sig] = {"x": [], "y": [], "sizes": [], "labels": [], "color": col}
+        sig_groups[sig]["x"].append(pos)
+        sig_groups[sig]["y"].append(h)
+        sig_groups[sig]["sizes"].append(sz)
+        sig_groups[sig]["labels"].append(lbl)
+
+    for sig, grp in sig_groups.items():
+        fig.add_trace(go.Scatter(
+            x=grp["x"],
+            y=grp["y"],
+            mode="markers",
+            name=sig.replace("_", " ").title(),
+            marker=dict(
+                size=grp["sizes"],
+                color=grp["color"],
+                line=dict(color="white", width=1),
+            ),
+            text=grp["labels"],
+            hovertemplate="<b>%{text}</b><br>Position: %{x}<br>CADD: %{y:.1f}<extra></extra>",
+        ))
+
+    # Mark queried mutation
+    if query.mutation:
+        import re
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            mut_cadd = next((h for p, h in zip(positions, heights) if p == mut_pos), 20)
+            fig.add_trace(go.Scatter(
+                x=[mut_pos],
+                y=[mut_cadd],
+                mode="markers+text",
+                marker=dict(size=16, color="#FF3B30", symbol="star", line=dict(width=2, color="white")),
+                text=[query.mutation],
+                textposition="top center",
+                textfont=dict(size=11, color="#FF3B30"),
+                name=f"Query: {query.mutation}",
+                hovertemplate=f"<b>{query.mutation}</b><br>CADD: {mut_cadd:.1f}<extra></extra>",
+            ))
+
+    # CADD significance threshold line
+    fig.add_hline(
+        y=20, line_dash="dash", line_color="rgba(255,59,48,0.3)",
+        annotation_text="CADD ≥20 (top 1% deleterious)",
+        annotation_font_color="rgba(255,59,48,0.6)",
+        annotation_font_size=10,
+    )
+
+    fig.update_layout(
+        xaxis_title="Protein Position",
+        yaxis_title="CADD Score (pathogenicity)",
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="#000000",
+        height=320,
+        margin=dict(t=10, b=40, l=50, r=20),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1, font=dict(size=10),
+        ),
+        xaxis=dict(gridcolor="rgba(0,0,0,0.06)", range=[0, max_res]),
+        yaxis=dict(gridcolor="rgba(0,0,0,0.06)"),
+    )
+
+    # Cross-filtering: highlight residues selected from other panels
+    selected_residues = st.session_state.get("selected_residues", [])
+    if selected_residues:
+        sel_x = [p for p in positions if p in selected_residues]
+        sel_y = [h for p, h in zip(positions, heights) if p in selected_residues]
+        if sel_x:
+            fig.add_trace(go.Scatter(
+                x=sel_x, y=sel_y,
+                mode="markers",
+                name="Selected",
+                marker=dict(
+                    size=18, color="rgba(255,149,0,0.3)",
+                    line=dict(color="#FF9500", width=2),
+                    symbol="circle",
+                ),
+                hoverinfo="skip",
+                showlegend=True,
+            ))
+
+    st.plotly_chart(fig, use_container_width=True, key="variant_lollipop_chart")
+
+    # Hotspot detection & interpretation
+    pathogenic_pos = [p for p, c in zip(positions, colors) if c == "#FF3B30"]
+    if len(pathogenic_pos) >= 3:
+        from collections import Counter
+        window = 30
+        bins = Counter(p // window for p in pathogenic_pos)
+        hotspots = [(b * window, (b + 1) * window, cnt) for b, cnt in bins.items() if cnt >= 2]
+        hotspots.sort(key=lambda h: h[2], reverse=True)
+        if hotspots:
+            top = hotspots[0]
+            pct_variants = top[2] / len(pathogenic_pos) * 100
+            pct_protein = window / max_res * 100 if max_res > 0 else 0
+            st.warning(
+                f"**Variant hotspot**: {top[2]} pathogenic variants cluster in "
+                f"residues {top[0]}–{top[1]} — {pct_variants:.0f}% of pathogenic "
+                f"variants in {pct_protein:.0f}% of the protein."
+            )
+
+    severe = sum(1 for h in heights if h >= 20)
+    if severe:
+        st.info(
+            f"**{severe} variant(s)** with CADD ≥ 20 (top 1% deleterious genome-wide) — "
+            f"highest-confidence pathogenic positions."
+        )

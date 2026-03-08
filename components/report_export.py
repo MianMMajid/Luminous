@@ -15,10 +15,8 @@ from src.utils import confidence_emoji, safe_json_dumps, trust_to_color, trust_t
 def render_report_export():
     """Tab 4: Report generation, Plotly figures, and downloads."""
     if not st.session_state.get("query_parsed") or not st.session_state.get("prediction_result"):
-        st.info(
-            "Complete **Search** → **Structure** → **Biology** first, "
-            "then come back here to export your results."
-        )
+        from components.empty_state import render_empty_state
+        render_empty_state("report")
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
@@ -33,11 +31,9 @@ def render_report_export():
     # --- Summary Header ---
     mut_str = f" ({query.mutation})" if query.mutation else ""
     st.markdown(
-        f'<div class="glow-card" style="margin-bottom:16px">'
-        f'<div style="font-size:1.3rem;font-weight:700">'
-        f'Report: {query.protein_name}{mut_str}</div>'
-        f'<div style="color:rgba(60,60,67,0.6);font-size:0.88rem;margin-top:2px">'
-        f'AI Structure Interpretation &amp; Trust Audit</div>'
+        f'<div class="lumi-tab-header">'
+        f'<div class="tab-title">Report: {query.protein_name}{mut_str}</div>'
+        f'<div class="tab-subtitle">AI Structure Interpretation &amp; Trust Audit</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -198,6 +194,11 @@ def render_report_export():
     st.divider()
     _render_graphical_abstract(query, prediction, trust_audit, bio_context)
 
+    # --- Protein Animation Video ---
+    st.divider()
+    from components.video_panel import render_video_panel
+    render_video_panel()
+
     # --- Experiment Tracker ---
     st.divider()
     _render_experiment_tracker(query, trust_audit, bio_context)
@@ -206,9 +207,9 @@ def render_report_export():
     st.divider()
     _render_html_export(query, prediction, trust_audit, bio_context, interpretation)
 
-    # --- AI-Generated Scientific Diagram ---
+    # --- Data-Driven Scientific Figures (Claude SVG) ---
     st.divider()
-    _render_ai_diagram(query, interpretation)
+    _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
 
     # --- BioRender Templates (Live MCP search) ---
     st.divider()
@@ -235,7 +236,7 @@ def _render_pdf_download(
             use_container_width=True,
             key=f"gen_pdf{key_suffix}",
         ):
-            with st.spinner("Generating PDF report..."):
+            with st.status("Generating PDF report..."):
                 try:
                     from src.pdf_report import generate_pdf_report
 
@@ -247,6 +248,9 @@ def _render_pdf_download(
                     # Gather drug resistance data
                     drug_resistance = _gather_drug_resistance(query)
 
+                    # Extract first frame from video for PDF embedding
+                    video_frame = _extract_video_frame()
+
                     pdf_bytes = generate_pdf_report(
                         query=query,
                         prediction=prediction,
@@ -255,13 +259,19 @@ def _render_pdf_download(
                         interpretation=interpretation,
                         variant_data=variant_data,
                         drug_resistance_data=drug_resistance,
+                        video_frame=video_frame,
                     )
+                    if isinstance(pdf_bytes, bytearray):
+                        pdf_bytes = bytes(pdf_bytes)
                     st.session_state[pdf_key] = pdf_bytes
                 except Exception as e:
                     st.error(f"PDF generation failed: {e}")
 
     with col_dl:
         pdf_bytes = st.session_state.get(pdf_key)
+        if isinstance(pdf_bytes, bytearray):
+            pdf_bytes = bytes(pdf_bytes)
+            st.session_state[pdf_key] = pdf_bytes
         if pdf_bytes:
             mut_str = f"_{query.mutation}" if query.mutation else ""
             st.download_button(
@@ -279,6 +289,80 @@ def _render_pdf_download(
                 '<div style="padding:10px;text-align:center;color:rgba(60,60,67,0.55);'
                 'font-size:0.88rem">Click Generate to create the PDF</div>',
                 unsafe_allow_html=True,
+            )
+
+    # ── In-app PDF viewer + video player (side by side) ──
+    pdf_bytes = st.session_state.get(pdf_key)
+    video_bytes = st.session_state.get("generated_video")
+    if pdf_bytes:
+        _render_pdf_viewer(pdf_bytes, video_bytes, key_suffix)
+
+
+def _extract_video_frame() -> bytes | None:
+    """Extract a representative frame from the generated video for PDF embedding.
+
+    Uses the uploaded screenshot if available, otherwise tries to extract
+    the first frame from the video using a simple approach.
+    """
+    import streamlit as st
+
+    # Prefer the uploaded screenshot (already a clean PNG)
+    uploaded = st.session_state.get("video_screenshot")
+    if uploaded is not None:
+        try:
+            return uploaded.getvalue()
+        except Exception:
+            pass
+
+    # If no screenshot but we have video bytes, we can't easily extract
+    # a frame without ffmpeg/cv2. Return None gracefully.
+    return None
+
+
+def _render_pdf_viewer(
+    pdf_bytes: bytes,
+    video_bytes: bytes | None = None,
+    key_suffix: str = "",
+):
+    """Render an in-app PDF viewer with optional side-by-side video player."""
+    import base64
+
+    import streamlit as st
+
+    if video_bytes:
+        # Side-by-side: PDF viewer (left) + Video player (right)
+        pdf_col, video_col = st.columns([3, 2], gap="medium")
+    else:
+        pdf_col = st.container()
+        video_col = None
+
+    with pdf_col:
+        st.markdown("#### Report Preview")
+        # Embed PDF as base64 iframe
+        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+        pdf_iframe = (
+            f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
+            f'width="100%" height="700" '
+            f'style="border:1px solid rgba(0,0,0,0.1);border-radius:8px" '
+            f'type="application/pdf"></iframe>'
+        )
+        st.markdown(pdf_iframe, unsafe_allow_html=True)
+
+    if video_col is not None and video_bytes:
+        with video_col:
+            st.markdown("#### Protein Animation")
+            st.video(video_bytes, format="video/mp4", loop=True, autoplay=True)
+            st.caption(
+                "AI-generated protein animation (Google Veo). "
+                "This video is embedded as a thumbnail in the PDF report."
+            )
+            st.download_button(
+                "Download Video",
+                data=video_bytes,
+                file_name="protein_animation.mp4",
+                mime="video/mp4",
+                use_container_width=True,
+                key=f"dl_video_viewer{key_suffix}",
             )
 
 
@@ -581,71 +665,153 @@ def _build_markdown_report(
     return "\n".join(lines)
 
 
-def _render_ai_diagram(
+def _render_data_driven_figures(
     query: ProteinQuery,
+    prediction: PredictionResult | None,
+    trust_audit: TrustAudit | None,
+    bio_context: BioContext | None,
     interpretation: str | None,
 ):
-    """Render AI-generated SVG scientific diagram via Claude."""
-    st.markdown("#### AI-Generated Scientific Diagram")
-    st.caption(
-        "Claude generates a vector pathway diagram based on your "
-        "protein analysis — editable, publication-ready SVG."
+    """Render data-driven SVG figures + Mermaid pathway using real computed data."""
+    from src.svg_figures import (
+        gather_figure_data,
+        generate_mermaid_pathway,
+        get_figure_types,
     )
 
-    svg_key = f"svg_diagram_{query.protein_name}"
+    st.markdown("#### Data-Driven Scientific Figures")
+    st.caption(
+        "Claude generates vector diagrams using **real computed values** from your analysis "
+        "— every number is from actual data, not hallucinated."
+    )
 
-    if svg_key not in st.session_state:
-        st.session_state[svg_key] = None
+    # Gather all computed data once
+    gathered = gather_figure_data(query, prediction, trust_audit, bio_context)
+    data_json = json.dumps(gathered, sort_keys=True, default=str)
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        generate = st.button(
-            "Generate Diagram",
-            type="primary",
-            use_container_width=True,
-            key="gen_svg_btn",
-        )
+    # Get figure types appropriate for this query
+    figure_types = get_figure_types(query)
 
-    if generate:
-        from src.biorender_search import generate_svg_diagram
+    if not figure_types:
+        st.info("No figure types available for this query type.")
+        return
 
-        with st.spinner("Claude is drawing your diagram..."):
-            svg = generate_svg_diagram(
-                protein_name=query.protein_name,
-                mutation=query.mutation,
-                question_type=query.question_type,
-                interaction_partner=getattr(
-                    query, "interaction_partner", None
-                ),
-                interpretation=interpretation,
+    # Render tabs for each figure type
+    tab_labels = [ft[0] for ft in figure_types] + ["Pathway Diagram"]
+    tabs = st.tabs(tab_labels)
+
+    mut_str = f"_{query.mutation}" if query.mutation else ""
+
+    for idx, (label, suffix, gen_fn) in enumerate(figure_types):
+        with tabs[idx]:
+            svg_key = f"svg_{suffix}_{query.protein_name}"
+
+            if svg_key not in st.session_state:
+                st.session_state[svg_key] = None
+
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                generate = st.button(
+                    f"Generate {label}",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"gen_{suffix}_btn",
+                )
+
+            if generate:
+                with st.status(f"Claude is generating {label} from your data..."):
+                    svg = gen_fn(data_json)
+                    st.session_state[svg_key] = svg
+
+            svg_content = st.session_state.get(svg_key)
+            if svg_content:
+                st.markdown(
+                    f'<div style="background:white;border-radius:12px;'
+                    f'padding:16px;border:1px solid rgba(0,0,0,0.08);'
+                    f'text-align:center">{svg_content}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.download_button(
+                    f"Download {label} SVG",
+                    data=svg_content,
+                    file_name=f"{query.protein_name}{mut_str}_{suffix}.svg",
+                    mime="image/svg+xml",
+                    key=f"dl_{suffix}_btn",
+                )
+                # Show data source badge
+                st.caption(
+                    f"Generated from {gathered['n_residues']} residues, "
+                    f"{len(gathered.get('drugs', []))} drugs, "
+                    f"{len(gathered.get('pathways', []))} pathways — "
+                    f"all values from computed analysis."
+                )
+            elif not generate:
+                _show_data_preview(gathered, suffix)
+
+    # Mermaid pathway tab (last tab, no LLM call needed)
+    with tabs[-1]:
+        mermaid = generate_mermaid_pathway(gathered)
+        if mermaid:
+            st.markdown("**Pathway Diagram** — generated from your analysis data")
+            st.caption(
+                "Copy this into BioRender's text-to-flowchart tool, "
+                "or use any Mermaid renderer."
             )
-            st.session_state[svg_key] = svg
+            st.code(mermaid, language="mermaid")
 
-    svg_content = st.session_state.get(svg_key)
-    if svg_content:
-        # Render SVG inline
-        st.markdown(
-            f'<div style="background:white;border-radius:12px;'
-            f'padding:16px;border:1px solid rgba(0,0,0,0.08);'
-            f'text-align:center">{svg_content}</div>',
-            unsafe_allow_html=True,
-        )
+            col_dl, col_br = st.columns([1, 1], gap="small")
+            with col_dl:
+                st.download_button(
+                    "Download Mermaid (.mmd)",
+                    data=mermaid,
+                    file_name=f"{query.protein_name}{mut_str}_pathway.mmd",
+                    mime="text/plain",
+                    key="dl_mermaid_btn",
+                )
+            with col_br:
+                st.markdown(
+                    '<a href="https://app.biorender.com" target="_blank" '
+                    'style="display:inline-block;padding:8px 20px;background:#007AFF;'
+                    'color:white;border-radius:8px;text-decoration:none;font-weight:600;'
+                    'font-size:0.85rem">Paste in BioRender &rarr;</a>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info(
+                "No pathway data available yet. Run a query with drug or pathway "
+                "context to generate a Mermaid pathway diagram."
+            )
 
-        # Download button for SVG file
-        mut_str = f"_{query.mutation}" if query.mutation else ""
-        filename = f"{query.protein_name}{mut_str}_diagram.svg"
-        st.download_button(
-            "Download SVG",
-            data=svg_content,
-            file_name=filename,
-            mime="image/svg+xml",
-            key="dl_svg_btn",
-        )
-    elif not generate:
+
+def _show_data_preview(gathered: dict, suffix: str):
+    """Show a compact preview of what data will feed the figure."""
+    items = []
+    md = gathered.get("mutation_data")
+    if md and md.get("sasa") is not None:
+        burial = "buried" if md.get("is_buried") else "exposed"
+        items.append(f"Mutation SASA: {md['sasa']} Å² ({burial})")
+    if md and md.get("centrality_percentile"):
+        items.append(f"Network centrality: {md['centrality_percentile']}th percentile")
+    if gathered.get("pockets"):
+        items.append(f"{len(gathered['pockets'])} binding pocket(s) detected")
+    if gathered.get("drugs"):
+        items.append(f"{len(gathered['drugs'])} drug candidate(s)")
+    if gathered.get("variants", {}).get("pathogenic_count"):
+        items.append(f"{gathered['variants']['pathogenic_count']} pathogenic variants")
+    if gathered.get("resistance"):
+        items.append(f"Drug resistance data available")
+    sse = gathered.get("sse", {})
+    if sse.get("helix_pct"):
+        items.append(f"SSE: {sse['helix_pct']}% helix, {sse['sheet_pct']}% sheet, {sse['coil_pct']}% coil")
+
+    if items:
         st.info(
-            "Click **Generate Diagram** to create an AI-powered "
-            "scientific illustration of your protein analysis."
+            f"**Data available for this figure:**\n"
+            + "\n".join(f"- {item}" for item in items)
+            + "\n\nClick **Generate** to create an SVG using these real values."
         )
+    else:
+        st.info("Click **Generate** to create a data-driven scientific diagram.")
 
 
 def _load_precomputed_biorender(query: ProteinQuery) -> list[dict] | None:
@@ -701,7 +867,7 @@ def _render_biorender_section(query: ProteinQuery):
             if trust_audit.known_limitations:
                 trust_summary += f". Limitations: {'; '.join(trust_audit.known_limitations[:2])}"
 
-        with st.spinner("Searching BioRender for relevant templates..."):
+        with st.status("Searching BioRender for relevant templates..."):
             results = search_biorender_templates(
                 protein_name=query.protein_name,
                 mutation=query.mutation,
@@ -758,16 +924,37 @@ def _render_biorender_section(query: ProteinQuery):
         for item in other:
             st.markdown(f"- **{item.get('name', 'Unknown')}** — {item.get('description', '')}")
 
-    # --- AI Figure Prompt Generator ---
+    # --- Data-Enriched Figure Prompt Generator ---
     st.markdown("---")
     st.markdown("**AI Figure Prompt** — Copy into BioRender's text-to-figure tool")
+    st.caption("Prompt is enriched with real computed data from your analysis.")
 
     prompt_key = f"biorender_prompt_{query.protein_name}"
     if prompt_key not in st.session_state:
         from src.biorender_search import generate_figure_prompt
 
-        interpretation_text = st.session_state.get("interpretation")
-        with st.spinner("Generating figure prompt..."):
+        # Build data-enriched interpretation for the prompt
+        interpretation_text = st.session_state.get("interpretation", "")
+        sa = st.session_state.get("structure_analysis") or {}
+        if sa:
+            data_lines = []
+            if sa.get("mutation_sasa") is not None:
+                burial = "buried" if sa.get("mutation_is_buried") else "surface-exposed"
+                data_lines.append(f"Mutation SASA: {sa['mutation_sasa']:.1f} Å² ({burial})")
+            if sa.get("mutation_centrality_percentile"):
+                data_lines.append(f"Network centrality: {sa['mutation_centrality_percentile']:.0f}th percentile")
+            if sa.get("mutation_in_pocket"):
+                data_lines.append("Mutation is inside binding pocket")
+            elif sa.get("mutation_to_pocket_min_distance"):
+                data_lines.append(f"Mutation is {sa['mutation_to_pocket_min_distance']:.1f}Å from nearest pocket")
+            if sa.get("sse_counts"):
+                counts = sa["sse_counts"]
+                total = sum(counts.values()) or 1
+                data_lines.append(f"SSE: {100*counts.get('a',0)/total:.0f}% helix, {100*counts.get('b',0)/total:.0f}% sheet")
+            if data_lines:
+                interpretation_text = (interpretation_text or "") + "\nComputed data: " + "; ".join(data_lines)
+
+        with st.status("Generating data-enriched figure prompt..."):
             prompt = generate_figure_prompt(
                 protein_name=query.protein_name,
                 mutation=query.mutation,
@@ -929,7 +1116,6 @@ def _render_experiment_tracker(
                 if st.session_state.get("experiment_tracker") is None:
                     st.session_state["experiment_tracker"] = {}
                 st.session_state["experiment_tracker"][new_exp.strip()] = False
-                st.rerun()
 
     # Summary
     if completed > 0:
@@ -969,7 +1155,7 @@ def _render_html_export(
             use_container_width=True,
             key="gen_html",
         ):
-            with st.spinner("Building HTML report..."):
+            with st.status("Building HTML report..."):
                 html_content = _build_html_report(
                     query, prediction, trust_audit, bio_context, interpretation
                 )
@@ -1282,7 +1468,7 @@ def _render_figure_kit_section(
             use_container_width=True,
             key="gen_figure_kit",
         ):
-            with st.spinner("Assembling figure kit..."):
+            with st.status("Assembling figure kit..."):
                 try:
                     kit_bytes = _build_figure_kit_zip(
                         query, prediction, trust_audit, bio_context
@@ -1569,7 +1755,7 @@ def _render_panel_composer(
             use_container_width=True,
             key="export_panel",
         ):
-            with st.spinner("Generating multi-panel figure..."):
+            with st.status("Generating multi-panel figure..."):
                 try:
                     panel_content, panel_ext, panel_mime = _build_panel_figure(
                         selected, panel_labels, query
@@ -1792,7 +1978,7 @@ def _render_graphical_abstract(
         if not finding.strip():
             st.warning("Enter a finding to generate the abstract.")
         else:
-            with st.spinner("Generating graphical abstract..."):
+            with st.status("Generating graphical abstract..."):
                 svg_content = _build_graphical_abstract_svg(
                     query, prediction, trust_audit, bio_context, finding.strip()
                 )

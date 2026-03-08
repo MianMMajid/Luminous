@@ -628,9 +628,9 @@ def execute_tool(tool_name: str, tool_input: dict, session_context: dict) -> str
         elif tool_name == "get_protein_info":
             return _exec_protein_info(tool_input)
         elif tool_name == "fold_sequence":
-            return _exec_fold_sequence(tool_input)
+            return _exec_fold_sequence(tool_input, session_context)
         elif tool_name == "lookup_alphafold":
-            return _exec_alphafold(tool_input)
+            return _exec_alphafold(tool_input, session_context)
         elif tool_name == "predict_variant_effect":
             return _exec_variant_effect(tool_input)
         elif tool_name == "check_population_frequency":
@@ -818,7 +818,7 @@ def _exec_protein_info(tool_input: dict) -> str:
     return safe_json_dumps(result)
 
 
-def _exec_fold_sequence(tool_input: dict) -> str:
+def _exec_fold_sequence(tool_input: dict, ctx: dict | None = None) -> str:
     from src.online_tools import fold_sequence
     result = fold_sequence(tool_input.get("sequence", ""))
     # Don't send full PDB text to Claude — just the summary
@@ -826,12 +826,14 @@ def _exec_fold_sequence(tool_input: dict) -> str:
         pdb_text = result.pop("pdb_content")
         result["pdb_available"] = True
         result["pdb_length_bytes"] = len(pdb_text)
-        # Store in a module-level cache so it can be retrieved
+        # Store in module-level cache and session context for downstream tools
         _fold_cache["last_pdb"] = pdb_text
+        if ctx is not None:
+            ctx["pdb_content"] = pdb_text
     return safe_json_dumps(result)
 
 
-def _exec_alphafold(tool_input: dict) -> str:
+def _exec_alphafold(tool_input: dict, ctx: dict | None = None) -> str:
     from src.online_tools import lookup_alphafold
     result = lookup_alphafold(tool_input.get("uniprot_id", ""))
     if "pdb_content" in result and "error" not in result:
@@ -840,6 +842,8 @@ def _exec_alphafold(tool_input: dict) -> str:
         result["pdb_length_bytes"] = len(pdb_text)
         _fold_cache["last_pdb"] = pdb_text
         _fold_cache["last_uniprot"] = tool_input.get("uniprot_id", "")
+        if ctx is not None:
+            ctx["pdb_content"] = pdb_text
     return safe_json_dumps(result)
 
 

@@ -337,12 +337,17 @@ def run_two_way_anova(
         if levels_b < 2:
             return {"error": f"Factor '{factor_b}' has only {levels_b} level(s). Need at least 2."}
 
-        # Check for empty cells
-        cell_counts = df_clean.groupby([factor_a, factor_b]).size()
-        empty_cells = (cell_counts < 2).sum()
-        if (cell_counts == 0).any():
+        # Check for empty cells — use reindex to detect missing combinations
+        all_combos = pd.MultiIndex.from_product(
+            [df_clean[factor_a].unique(), df_clean[factor_b].unique()],
+            names=[factor_a, factor_b],
+        )
+        cell_counts = df_clean.groupby([factor_a, factor_b]).size().reindex(all_combos, fill_value=0)
+        missing = cell_counts[cell_counts == 0]
+        if len(missing) > 0:
+            missing_labels = [f"({a}, {b})" for a, b in missing.index[:3]]
             return {
-                "error": "Unbalanced design: some factor combinations have no observations. "
+                "error": f"Missing factor combinations: {', '.join(missing_labels)}. "
                          "Two-way ANOVA requires at least 1 observation per cell."
             }
 
@@ -502,9 +507,12 @@ def run_logistic_regression(
                 return {"error": f"Outcome must have exactly 2 levels, got {len(levels)}."}
             y = (y == levels[1]).astype(int)
         else:
-            unique_vals = y.dropna().unique()
+            unique_vals = sorted(y.dropna().unique())
             if len(unique_vals) != 2:
                 return {"error": f"Outcome must have exactly 2 unique values, got {len(unique_vals)}."}
+            # Map any two numeric levels to 0/1 (e.g. {1,2} -> {0,1})
+            if set(unique_vals) != {0, 1}:
+                y = (y == unique_vals[1]).astype(int)
 
         X = df_work[features].copy().astype(float)
         X = sm.add_constant(X)
@@ -1608,10 +1616,13 @@ def run_kaplan_meier(
         # Validate
         mask = ~(np.isnan(time) | np.isnan(event.astype(float)))
         if group is not None:
-            group = np.asarray(group)
-            # Also mask out NaN groups (for object arrays, check for None / "nan")
-            if group.dtype.kind in ('f', 'i'):
-                mask = mask & ~np.isnan(group.astype(float))
+            group = np.asarray(group, dtype=object)
+            # Mask out None/NaN group labels
+            group_valid = np.array([
+                g is not None and str(g) not in ("nan", "NaN", "")
+                for g in group
+            ])
+            mask = mask & group_valid
         time_c = time[mask]
         event_c = event[mask]
         removed = int((~mask).sum())
@@ -1624,7 +1635,7 @@ def run_kaplan_meier(
             return {"error": "No events observed. Cannot estimate survival."}
 
         if group is not None:
-            group_c = group[mask]
+            group_c = np.asarray(group[mask], dtype=str)
         else:
             group_c = np.array(["All"] * len(time_c))
 
@@ -1668,10 +1679,17 @@ def run_logrank(
 
         time = np.asarray(time, dtype=float)
         event = np.asarray(event, dtype=int)
-        group = np.asarray(group)
+        group = np.asarray(group, dtype=object)
 
         mask = ~(np.isnan(time) | np.isnan(event.astype(float)))
-        time_c, event_c, group_c = time[mask], event[mask], group[mask]
+        # Mask out None/NaN group labels
+        group_valid = np.array([
+            g is not None and str(g) not in ("nan", "NaN", "")
+            for g in group
+        ])
+        mask = mask & group_valid
+        time_c, event_c = time[mask], event[mask]
+        group_c = np.asarray(group[mask], dtype=str)
         removed = int((~mask).sum())
 
         if len(time_c) == 0:
@@ -1736,14 +1754,38 @@ def run_cox_regression(
 
         summary = cph.summary
 
-        # PH assumption test
+        # PH assumption test — capture stdout output and parse violations
         ph_violations = []
         try:
-            ph_test = cph.check_assumptions(df_clean, p_value_threshold=0.05, show_plots=False)
-            if ph_test:
-                ph_violations = ph_test
+            import io
+            import contextlib
+
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+                cph.check_assumptions(df_clean, p_value_threshold=0.05, show_plots=False)
+            ph_output = f.getvalue()
+
+            # Parse the Schoenfeld test results from summary table
+            ph_results = cph.summary
+            for covar in (covariates or []):
+                try:
+                    # lifelines stores PH test p-values via proportional_hazard_test
+                    from lifelines.statistics import proportional_hazard_test
+                    ph_df = proportional_hazard_test(cph, df_clean, time_transform="rank")
+                    for idx in ph_df.summary.index:
+                        p = float(ph_df.summary.loc[idx, "p"])
+                        if p < 0.05:
+                            ph_violations.append(
+                                f"{idx}: p={p:.4f} — PH assumption may be violated"
+                            )
+                    break  # Only need to run once
+                except Exception:
+                    # Fallback: extract from stdout
+                    if "reject" in ph_output.lower() or "violated" in ph_output.lower():
+                        ph_violations.append(ph_output.strip()[:300])
+                    break
         except Exception:
-            ph_violations = []
+            pass
 
         hazard_ratios = {}
         for row in summary.index:
@@ -2005,6 +2047,23 @@ def run_repeated_measures_anova(
         subjects = df_clean[subject].nunique()
         if subjects < 3:
             return {"error": f"Need at least 3 subjects, got {subjects}."}
+
+        # Validate balanced design: each subject must have exactly the same levels
+        obs_per_subject = df_clean.groupby(subject)[within].nunique()
+        if obs_per_subject.nunique() != 1:
+            unbalanced = obs_per_subject[obs_per_subject != obs_per_subject.mode().iloc[0]]
+            return {
+                "error": f"Unbalanced design: {len(unbalanced)} subject(s) have different numbers "
+                         f"of within-factor levels. Repeated-measures ANOVA requires each subject "
+                         f"to have exactly {levels} observations (one per level of '{within}')."
+            }
+        counts_per_cell = df_clean.groupby([subject, within]).size()
+        if (counts_per_cell != 1).any():
+            return {
+                "error": "Duplicate observations: some subjects have multiple measurements "
+                         f"for the same level of '{within}'. Each subject must appear exactly "
+                         "once per condition."
+            }
 
         result = pg.rm_anova(data=df_clean, dv=dv, within=within, subject=subject, detailed=False)
 

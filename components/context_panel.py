@@ -8,10 +8,8 @@ from src.models import BioContext, ProteinQuery, TrustAudit
 def render_context_panel():
     """Tab 3: Biological context and AI interpretation."""
     if not st.session_state.get("query_parsed"):
-        st.info(
-            "No query loaded yet. Go to the **Search** tab to enter a protein name, "
-            "mutation, or paste a sequence. Try one of the example queries to get started."
-        )
+        from components.empty_state import render_empty_state
+        render_empty_state("biology")
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
@@ -24,33 +22,69 @@ def render_context_panel():
 
     # Fetch context if not already done
     if bio_context is None:
+        from src.task_manager import task_manager
+
+        # Check if background fetch is already running
+        ctx_status = task_manager.status("bio_context")
+        if ctx_status and ctx_status.value == "running":
+            st.markdown(
+                '<div class="lumi-tab-header">'
+                '<div class="tab-title">Gathering Biological Context...</div>'
+                '<div class="tab-subtitle">Querying databases in the background. Feel free to explore other tabs.</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            st.info(
+                "Querying PubMed, Open Targets, Wiley, and ChEMBL in the background. "
+                "Feel free to explore other tabs — Lumi will notify you when it's ready."
+            )
+            return
+
         st.markdown(
-            "### Gather biological context\n"
-            "Query PubMed, Open Targets, Wiley, and ChEMBL to understand the "
-            "clinical significance of your protein."
+            '<div class="lumi-tab-header">'
+            '<div class="tab-title">Gather Biological Context</div>'
+            '<div class="tab-subtitle">Query PubMed, Open Targets, Wiley, and ChEMBL to understand the '
+            'clinical significance of your protein.</div>'
+            '</div>',
+            unsafe_allow_html=True,
         )
         if st.button("Fetch Biological Context", type="primary"):
-            _fetch_and_interpret(query, trust_audit)
-            st.rerun()
+            _submit_context_background(query, trust_audit)
+            st.info(
+                "Fetching in the background — Lumi will notify you when it's ready."
+            )
         return
 
-    # Auto-generate interpretation if context exists but interpretation doesn't
-    # Guard with a flag to prevent re-triggering on every rerun
+    # Auto-generate interpretation in background if context exists but interpretation doesn't
     if interpretation is None and trust_audit is not None and not st.session_state.get("_interpretation_attempted"):
         st.session_state["_interpretation_attempted"] = True
-        try:
-            from src.interpreter import generate_interpretation
-            interpretation = generate_interpretation(query, trust_audit, bio_context)
-        except Exception:
-            from src.interpreter import _fallback_interpretation
-            interpretation = _fallback_interpretation(query, trust_audit, bio_context)
-        st.session_state["interpretation"] = interpretation
+        from src.background_tasks import generate_interpretation_background
+        from src.task_manager import task_manager
+
+        task_manager.submit(
+            task_id="interpretation",
+            fn=generate_interpretation_background,
+            kwargs={
+                "protein_name": query.protein_name,
+                "uniprot_id": query.uniprot_id,
+                "mutation": query.mutation,
+                "question_type": query.question_type,
+                "interaction_partner": query.interaction_partner,
+                "sequence": query.sequence,
+                "trust_audit_dict": trust_audit,
+                "bio_context_obj": bio_context,
+            },
+            label="AI interpretation",
+        )
 
     # --- Display results ---
 
     # AI Interpretation (the headline)
     if interpretation:
-        st.markdown("### AI Interpretation")
+        st.markdown(
+            '<div class="lumi-sub-header">AI Interpretation</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(interpretation)
         st.markdown(
             '<div style="text-align:right;font-size:0.75rem;color:rgba(60,60,67,0.55);margin-top:4px">'
@@ -225,19 +259,24 @@ def render_context_panel():
                 key="pin_interpretation",
             )
 
-    # Send disease association scores to Statistics tab
+    # Send disease association scores to Statistics tab (Claude Analysis mode)
     if bio_context.disease_associations:
         import pandas as pd
 
-        if st.button("Analyze in Statistics", key="ctx_send_stats",
-                     help="Send disease association scores to the Statistics tab"):
+        if st.button(
+            "Analyze with Claude AI",
+            key="ctx_send_stats",
+            type="primary",
+            help="Send disease scores to Claude Analysis for deeper statistical insights",
+        ):
             df = pd.DataFrame([{
                 "disease": d.disease,
                 "score": d.score,
                 "evidence": d.evidence or "",
             } for d in bio_context.disease_associations])
             st.session_state["stats_data"] = df
-            st.toast("Disease scores sent to Statistics tab!")
+            st.session_state["stats_analysis_mode"] = "Claude Analysis"
+            st.toast("Disease scores sent to Stats → Claude Analysis!")
 
     # Sources badge bar
     _render_source_badges(bio_context)
@@ -257,7 +296,7 @@ def render_context_panel():
     if trust_audit:
         from components.hypothesis_panel import render_hypothesis_panel
 
-        render_hypothesis_panel(query, trust_audit, bio_context)
+        render_hypothesis_panel(query, trust_audit, bio_context, key_suffix="_ctx")
 
     # Protein Knowledge Graph
     st.divider()
@@ -364,3 +403,23 @@ def _fetch_context(query: ProteinQuery, status) -> BioContext:
         st.write(f"BioMCP also failed: {e}. Using minimal context.")
 
     return BioContext()
+
+
+def _submit_context_background(query: ProteinQuery, trust_audit: TrustAudit | None):
+    """Submit bio context fetch + interpretation as background tasks."""
+    from src.background_tasks import fetch_bio_context_background
+    from src.task_manager import task_manager
+
+    task_manager.submit(
+        task_id="bio_context",
+        fn=fetch_bio_context_background,
+        kwargs={
+            "protein_name": query.protein_name,
+            "uniprot_id": query.uniprot_id,
+            "mutation": query.mutation,
+            "question_type": query.question_type,
+            "interaction_partner": query.interaction_partner,
+            "sequence": query.sequence,
+        },
+        label="Biological context (PubMed, Open Targets, ChEMBL)",
+    )

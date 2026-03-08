@@ -15,10 +15,12 @@ _TEXT_KEY = "query_text_area"
 def render_query_input():
     """Tab 1: Natural language query input with example buttons."""
     st.markdown(
-        "### What protein do you want to investigate?\n"
-        "Ask any question about a protein — structure, mutations, drug targets, "
-        "or binding interactions. We'll predict the structure, audit the confidence, "
-        "and explain what it means."
+        '<div class="lumi-tab-header">'
+        '<div class="tab-title">What protein do you want to investigate?</div>'
+        '<div class="tab-subtitle">Ask any question about a protein — structure, mutations, drug targets, '
+        'or binding interactions. We\'ll predict the structure, audit the confidence, and explain what it means.</div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
 
     # Example buttons with styled cards
@@ -60,7 +62,6 @@ def render_query_input():
                     st.session_state[_TEXT_KEY] = ex["query"]
                     st.session_state["_example_data"] = ex
                     _do_parse(ex["query"], ex)
-                    st.rerun()
 
     # Text input — use only `key=`, no `value=`
     if _TEXT_KEY not in st.session_state:
@@ -118,7 +119,6 @@ def render_query_input():
     if parse_clicked and user_input.strip():
         example_data = st.session_state.pop("_example_data", None)
         _do_parse(user_input.strip(), example_data)
-        st.rerun()
 
     # Display parsed query
     if st.session_state.get("query_parsed") and st.session_state.get("parsed_query"):
@@ -127,6 +127,21 @@ def render_query_input():
 
 def _do_parse(text: str, example_data: dict | None = None):
     """Parse the query and store results in session state."""
+    # Keep user on the Search tab after rerun
+    st.session_state["active_tab"] = "Search"
+
+    # Cancel any running background tasks
+    try:
+        from src.task_manager import task_manager
+        task_manager.clear()
+    except Exception:
+        pass
+
+    # Clear the parsed query up-front so a failed parse never leaves
+    # the old protein active while downstream state is already wiped.
+    st.session_state["parsed_query"] = None
+    st.session_state["query_parsed"] = False
+
     # Reset downstream results
     for key in ["prediction_result", "trust_audit", "bio_context", "interpretation",
                 "generated_hypotheses", "stats_data", "stats_results",
@@ -135,8 +150,8 @@ def _do_parse(text: str, example_data: dict | None = None):
                 "figure_checklist_state", "experiment_tracker",
                 "sketch_image_bytes", "sketch_interpretation",
                 "comparison_data", "playground_inspiration",
-                "esmfold_pdb", "docked_complex_pdb",
-                "_interpretation_attempted"]:
+                "esmfold_pdb", "docked_complex_pdb", "generated_video",
+                "_interpretation_attempted", "_prediction_raw"]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
     # Clear dynamic caches keyed by protein name or uniprot ID
@@ -147,6 +162,7 @@ def _do_parse(text: str, example_data: dict | None = None):
             "alphafold_", "biorender_results_",
             "tamarind_results_", "svg_diagram_",
             "_dashboard_",
+            "_variant_fetch_attempted_", "variant_enrichment_",
         )):
             del st.session_state[k]
 
@@ -216,8 +232,9 @@ def _display_parsed_query(query: ProteinQuery):
     )
 
 
+@st.cache_data(show_spinner=False)
 def _load_examples() -> list[dict]:
-    """Load example queries from data file."""
+    """Load example queries from data file (cached — no disk read on reruns)."""
     path = Path("data/example_queries.json")
     if path.exists():
         try:

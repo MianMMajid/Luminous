@@ -5,7 +5,7 @@
    ============================================================ */
 
 /* --- Web Font Import --- */
-@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=Geist+Mono:wght@400;500&display=swap');
 
 /* --- Typography Scale --- */
 :root {
@@ -31,7 +31,7 @@
 /* --- Global Polish --- */
 .block-container {
     padding-top: 0 !important;
-    padding-bottom: 72px !important;
+    padding-bottom: 120px !important;
     letter-spacing: -0.2px;
 }
 /* Remove Streamlit's default top header spacing */
@@ -39,6 +39,7 @@ header[data-testid="stHeader"] {
     height: 0 !important;
     min-height: 0 !important;
     padding: 0 !important;
+    overflow: hidden !important;
 }
 .stApp [data-testid="stAppViewContainer"] {
     padding-top: 0 !important;
@@ -50,6 +51,22 @@ header[data-testid="stHeader"] {
 /* Apply font system globally */
 .stApp, .stApp * {
     font-family: var(--font-body);
+}
+/* Restore Streamlit's Material Symbols icon font — the global .stApp * rule
+   overrides emotion-styled icon spans that use "Material Symbols Rounded".
+   This affects sidebar collapse arrows, expander carets, alert icons, etc. */
+[data-testid*="Icon"],
+[data-testid="stExpandSidebarButton"] span,
+[data-testid="stSidebarCollapsedControl"] span,
+[data-testid="stExpander"] summary span,
+.stApp [data-baseweb="icon"],
+.stApp span[class*="emntfgb"],
+.material-symbols-rounded,
+.material-symbols-outlined,
+.material-icons {
+    font-family: "Material Symbols Rounded" !important;
+    font-style: normal !important;
+    -webkit-font-smoothing: antialiased;
 }
 /* Streamlit markdown body */
 .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
@@ -448,31 +465,6 @@ details[data-testid="stExpander"][open] {
     color: rgba(60, 60, 67, 0.55);
 }
 
-/* --- Sponsor Footer --- */
-.sponsor-footer {
-    text-align: center;
-    color: rgba(60, 60, 67, 0.55);
-    font-size: 0.78rem;
-    padding: 0.8rem 0;
-    position: relative;
-}
-.sponsor-footer::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 15%;
-    right: 15%;
-    height: 1px;
-    background: rgba(60, 60, 67, 0.12);
-}
-.sponsor-footer a {
-    color: #007AFF;
-    text-decoration: none;
-    transition: color 0.2s;
-}
-.sponsor-footer a:hover {
-    color: #409CFF;
-}
 
 /* --- Glow Effects for Key Elements (Light Glass) --- */
 .glow-card {
@@ -591,6 +583,53 @@ h4 {
 }
 .glass-card:hover {
     border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* --- Tab Section Headers (consistent across all tabs) --- */
+.lumi-tab-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.lumi-tab-header .tab-title {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--lumi-ink);
+    letter-spacing: -0.3px;
+    margin: 0;
+    line-height: 1.3;
+}
+.lumi-tab-header .tab-subtitle {
+    font-family: var(--font-body);
+    font-size: 0.88rem;
+    color: rgba(60, 60, 67, 0.5);
+    margin-top: 4px;
+    line-height: 1.45;
+}
+/* Section dividers within tabs — subtle whitespace zones */
+.lumi-section-gap {
+    height: 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    margin-bottom: 16px;
+}
+/* Sub-section headers within a tab */
+.lumi-sub-header {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--lumi-ink);
+    letter-spacing: -0.2px;
+    margin: 20px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+.lumi-sub-header .sub-desc {
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: rgba(60, 60, 67, 0.45);
+    margin-left: 8px;
 }
 
 /* --- Glass Panel (larger containers) --- */
@@ -803,41 +842,106 @@ a:hover, .stMarkdown a:hover {
        repeated here for the Judge UI section's own scope */
 }
 
-/* ── Welcome State ── */
+/* ── Welcome Page — fills viewport, hero above center ── */
+.lumi-welcome-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* Fill available space between header and fixed chat input + tab bar */
+    min-height: calc(100vh - 200px);
+    min-height: calc(100dvh - 200px);
+    width: 100%;
+    overflow: visible;
+    /* Offset upward so hero feels "above center" */
+    padding-bottom: 80px;
+    box-sizing: border-box;
+}
+/* ── Welcome State (hero section inside page) ── */
 .lumi-welcome {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 20px;
-    padding: 100px 24px 48px;
+    gap: 16px;
+    padding: 0 24px 0;
     animation: lumiWelcomeFadeIn 0.5s var(--lumi-ease-spring) both;
     overflow: visible;
     width: 100%;
 }
-.lumi-welcome-icon {
-    font-size: 56px;
-    line-height: 1;
-    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
-    animation: lumiFloat 3s ease-in-out infinite;
+/* ── Empty State Placeholder (shown on tabs before query is loaded) ── */
+.lumi-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 80px 24px 60px;
+    min-height: 50vh;
+    animation: lumiWelcomeFadeIn 0.4s ease both;
 }
-.lumi-welcome-heading {
-    margin: 0;
+.lumi-empty-state .empty-icon {
+    font-size: 48px;
+    line-height: 1;
+    margin-bottom: 16px;
+    opacity: 0.8;
+}
+.lumi-empty-state .empty-title {
     font-family: var(--font-display);
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--lumi-ink);
-    text-align: center;
+    margin: 0 0 8px;
 }
+.lumi-empty-state .empty-desc {
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    color: var(--lumi-muted);
+    max-width: 420px;
+    line-height: 1.55;
+    margin: 0 0 20px;
+}
+.lumi-empty-state .empty-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: rgba(60, 60, 67, 0.45);
+    padding: 6px 14px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.02);
+}
+
 .lumi-welcome-sub {
     margin: 0;
-    font-family: var(--font-body);
-    font-size: 17px;
-    color: var(--lumi-muted);
+    font-family: 'Caveat', cursive;
+    font-size: 30px;
+    font-weight: 600;
+    color: rgba(60, 60, 67, 0.65);
     text-align: center;
-    max-width: 600px;
-    line-height: 1.6;
-    animation: lumiSubFadeIn 0.6s 3.2s ease both;
+    max-width: 640px;
+    line-height: 1.5;
+}
+/* Typewriter cursor (kept for potential reuse) */
+.lumi-cursor {
+    display: none;
+    width: 2.5px;
+    height: 1.1em;
+    background: #007AFF;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: lumiCursorBlink 0.55s step-end infinite;
+}
+.lumi-cursor.done {
+    animation: lumiCursorFadeOut 0.4s 0.3s ease forwards;
+}
+@keyframes lumiCursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+@keyframes lumiCursorFadeOut {
+    to { opacity: 0; }
 }
 
 /* ============================================================
@@ -849,20 +953,20 @@ a:hover, .stMarkdown a:hover {
     margin: 0 auto !important;
     font-family: var(--font-display) !important;
     font-size: 148px !important;
-    font-weight: 800 !important;
+    font-weight: 900 !important;
     color: var(--lumi-ink) !important;
     text-align: center;
-    letter-spacing: -5px;
+    letter-spacing: -4px;
     display: flex;
-    align-items: flex-end;
+    align-items: baseline;
     justify-content: center;
     position: relative;
     line-height: 1 !important;
     user-select: none;
     overflow: visible;
-    /* Top clearance for the DNA jump arc */
-    padding-top: 180px;
-    margin-top: -70px;
+    /* Top clearance for the DNA jump arc — parents have overflow:visible */
+    padding-top: 80px;
+    margin-top: -32px;
     width: 100%;
 }
 
@@ -870,14 +974,14 @@ a:hover, .stMarkdown a:hover {
 .lumi-letter-i {
     display: inline-block;
     transform-origin: bottom center;
-    animation: lumiLetterSquash 3.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: lumiLetterSquash 4.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     position: relative;
     font-size: 148px !important;
-    font-weight: 800 !important;
+    font-weight: 900 !important;
     font-family: var(--font-display) !important;
     line-height: 1 !important;
-    letter-spacing: -5px;
-    width: 77px;
+    letter-spacing: -4px;
+    width: 80px;
     text-align: center;
 }
 
@@ -885,12 +989,12 @@ a:hover, .stMarkdown a:hover {
 .dna-slot {
     position: absolute;
     left: 50%;
-    bottom: 0;
+    bottom: 20px;
     transform: translateX(-50%);
-    width: 90px !important;
-    height: 120px !important;
-    min-width: 90px;
-    min-height: 120px;
+    width: 100px !important;
+    height: 150px !important;
+    min-width: 100px;
+    min-height: 150px;
     pointer-events: none;
     z-index: 2;
     overflow: visible !important;
@@ -899,28 +1003,28 @@ a:hover, .stMarkdown a:hover {
 .lumi-i-wrapper {
     position: relative;
     display: inline-flex;
-    align-items: flex-end;
+    align-items: baseline;
     justify-content: center;
-    width: 77px;
+    width: 80px;
     overflow: visible;
     font-size: 148px !important;
-    font-weight: 800 !important;
+    font-weight: 900 !important;
     line-height: 1 !important;
 }
 
 /* ── DNA character SVG ── */
 .dna-char {
     position: absolute;
-    bottom: 2px;
+    bottom: 0;
     left: 50%;
-    width: 72px !important;
-    height: 107px !important;
-    min-width: 72px !important;
-    min-height: 107px !important;
+    width: 80px !important;
+    height: 120px !important;
+    min-width: 80px !important;
+    min-height: 120px !important;
     max-width: none !important;
     max-height: none !important;
     transform-origin: bottom center;
-    animation: dnaHopIn 3.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: dnaHopIn 4.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.14));
     z-index: 3;
 }
@@ -933,15 +1037,15 @@ a:hover, .stMarkdown a:hover {
 }
 .dna-pupil {
     fill: #1a1a1a;
-    animation: dnaLookAround 3.0s ease forwards,
-               dnaIdleLook 4s 3.5s ease-in-out infinite;
+    animation: dnaLookAround 4.5s ease forwards,
+               dnaIdleLook 4s 5s ease-in-out infinite;
 }
 .dna-eyelid {
     fill: #E8E8ED;
     transform-origin: center 9px;
     transform: scaleY(0);
-    animation: dnaBlinkSequence 3.0s ease forwards,
-               dnaIdleBlink 4s 3.5s ease-in-out infinite;
+    animation: dnaBlinkSequence 4.5s ease forwards,
+               dnaIdleBlink 4s 5s ease-in-out infinite;
 }
 /* Strand colors */
 .dna-strand-blue { stroke: #007AFF; fill: none; stroke-width: 2.8; stroke-linecap: round; }
@@ -949,7 +1053,7 @@ a:hover, .stMarkdown a:hover {
 .dna-rung { stroke: rgba(0, 0, 0, 0.10); stroke-width: 1.6; stroke-linecap: round; }
 /* Subtle helix rotation while jumping */
 .dna-body-group {
-    animation: dnaHelixSpin 1.2s 0.3s linear 2;
+    animation: dnaHelixSpin 1.6s 0.4s linear 2;
     transform-origin: center center;
 }
 /* Shadow under DNA on ground */
@@ -971,8 +1075,9 @@ a:hover, .stMarkdown a:hover {
     color: var(--lumi-ink);
 }
 .lumi-title-compact .dna-char-static {
-    width: 14px;
-    height: 20px;
+    display: inline-block;
+    width: 14px !important;
+    height: 20px !important;
     vertical-align: baseline;
     margin: 0 -1px;
     position: relative;
@@ -981,42 +1086,12 @@ a:hover, .stMarkdown a:hover {
 }
 .lumi-title-compact .lumi-i-wrapper {
     width: auto;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+    display: inline;
+    overflow: hidden;
 }
-.lumi-welcome-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-    max-width: 560px;
-    margin-top: 8px;
-}
-
-/* ── Suggestion Pills (Judge UI style) ── */
-.lumi-pill {
-    display: inline-flex;
-    align-items: center;
-    height: 36px;
-    padding: 0 16px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 18px;
-    background: var(--lumi-bg);
-    color: var(--lumi-muted);
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
-    text-decoration: none;
-    white-space: nowrap;
-}
-.lumi-pill:hover {
-    background: rgba(0, 0, 0, 0.04);
-    border-color: rgba(0, 0, 0, 0.18);
-    color: var(--lumi-ink);
-    transform: translateY(-1px);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-}
-
 /* ── Category Segmented Control ── */
 .lumi-category-bar {
     display: flex;
@@ -1201,6 +1276,28 @@ a:hover, .stMarkdown a:hover {
 .lumi-typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
 .lumi-typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
 
+/* Thinking bubble for background agent calls */
+.lumi-bubble.lumi-thinking {
+    align-self: flex-start;
+    padding: 12px 18px;
+    min-width: 60px;
+}
+.lumi-thinking-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    height: 20px;
+}
+.lumi-thinking-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(60, 60, 67, 0.35);
+    animation: lumiTypingDot 1.4s ease-in-out infinite;
+}
+.lumi-thinking-dots span:nth-child(2) { animation-delay: 0.16s; }
+.lumi-thinking-dots span:nth-child(3) { animation-delay: 0.32s; }
+
 /* ── Chat Composer (Judge UI style — input with send button inside) ── */
 .lumi-composer {
     display: flex;
@@ -1303,11 +1400,6 @@ a:hover, .stMarkdown a:hover {
     min-width: min-content;
 }
 
-/* ── Footer Safe Zone ── */
-.sponsor-footer {
-    flex-shrink: 0;
-    margin-top: auto;
-}
 
 /* ============================================================
    Scroll & Overflow Safety — Global Fixes
@@ -1321,6 +1413,10 @@ a:hover, .stMarkdown a:hover {
     overflow-x: clip;
 }
 /* Welcome area: clip horizontal (DNA hops from right) but allow vertical (jump arc) */
+.lumi-welcome-page {
+    overflow-x: clip !important;
+    overflow-y: visible !important;
+}
 .lumi-welcome {
     overflow-x: clip !important;
     overflow-y: visible !important;
@@ -1350,33 +1446,166 @@ a:hover, .stMarkdown a:hover {
     -webkit-overflow-scrolling: touch;
 }
 
-/* ── Streamlit Chat Input (iMessage style) ── */
+/* ── Suggestion & Tool Pills — clean outline style ── */
+[data-testid="stPills"] button {
+    border-radius: 980px !important;
+    border: 1px solid rgba(0, 0, 0, 0.10) !important;
+    background: #ffffff !important;
+    color: var(--lumi-muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    padding: 4px 14px !important;
+    height: auto !important;
+    min-height: 32px !important;
+    transition: background 0.15s, border-color 0.15s, color 0.15s !important;
+}
+[data-testid="stPills"] button:hover {
+    background: rgba(0, 0, 0, 0.03) !important;
+    border-color: rgba(0, 0, 0, 0.18) !important;
+    color: var(--lumi-ink) !important;
+}
+[data-testid="stPills"] button[aria-checked="true"] {
+    background: #007AFF !important;
+    color: #ffffff !important;
+    border-color: #007AFF !important;
+}
+/* Center pills — force parent container to flex-center the pills widget */
+[data-testid="element-container"]:has(> [data-testid="stPills"]) {
+    display: flex !important;
+    justify-content: center !important;
+}
+[data-testid="stPills"] {
+    max-width: 640px !important;
+    width: 100% !important;
+    text-align: center !important;
+    padding: 0 12px !important;
+    box-sizing: border-box !important;
+}
+[data-testid="stPills"] > div,
+[data-testid="stPills"] > div > div,
+[data-testid="stPills"] div,
+[data-testid="stPills"] [role="radiogroup"],
+[data-testid="stPills"] [role="group"] {
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px 8px !important;
+}
+@media (max-width: 768px) {
+    [data-testid="stPills"] {
+        max-width: 100% !important;
+        padding: 0 8px !important;
+    }
+    [data-testid="stPills"] button {
+        font-size: 0.78rem !important;
+        padding: 3px 10px !important;
+        min-height: 28px !important;
+    }
+}
+@media (max-width: 480px) {
+    [data-testid="stPills"] button {
+        font-size: 0.74rem !important;
+        padding: 3px 8px !important;
+    }
+}
+/* Attach expander — compact, no border */
+.stExpander[data-testid="stExpander"] {
+    border: none !important;
+}
+/* File uploaders — tighter spacing */
+[data-testid="stExpander"] [data-testid="stFileUploader"] {
+    margin-bottom: -4px;
+}
+[data-testid="stExpander"] [data-testid="stFileUploader"] label {
+    font-size: 0.82rem !important;
+}
+
+/* ── Streamlit Chat Input (ChatGPT compact pill) ── */
 [data-testid="stChatInput"] {
     border-radius: 22px !important;
     border: 1px solid rgba(0, 0, 0, 0.10) !important;
     background: #ffffff !important;
+    max-width: 640px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    outline: none !important;
+    width: 100% !important;
 }
-[data-testid="stChatInput"] textarea {
+[data-testid="stChatInput"] > div {
+    border-radius: 22px !important;
     border: none !important;
     background: transparent !important;
+    outline: none !important;
+    width: 100% !important;
+}
+[data-testid="stChatInput"] textarea,
+[data-testid="stChatInput"] textarea:focus,
+[data-testid="stChatInput"] textarea:focus-visible,
+[data-testid="stChatInput"] input,
+[data-testid="stChatInput"] input:focus {
+    border: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
     box-shadow: none !important;
+    outline: none !important;
     font-size: 0.92rem !important;
 }
-[data-testid="stChatInput"] textarea:focus {
+/* Kill grey background on all inner wrappers */
+[data-testid="stChatInput"] div,
+[data-testid="stChatInput"] > div > div {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+/* No focus highlight inside the chat input */
+[data-testid="stChatInput"]:focus-within,
+[data-testid="stChatInput"] > div:focus-within {
+    border-color: rgba(0, 0, 0, 0.10) !important;
     box-shadow: none !important;
-    border: none !important;
+    outline: none !important;
 }
-/* Focus ring on the chat input container */
-[data-testid="stChatInput"]:focus-within {
-    border-color: #007AFF !important;
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12) !important;
+/* Kill any native outline on all children */
+[data-testid="stChatInput"] *:focus,
+[data-testid="stChatInput"] *:focus-visible {
+    outline: none !important;
 }
-/* Send button — iMessage blue circle with white arrow */
-[data-testid="stChatInputSubmitButton"],
+/* All buttons inside chat input — no border, no outline */
 [data-testid="stChatInput"] button {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    cursor: pointer !important;
+    padding: 0 !important;
+    margin: 0 2px !important;
+    transition: opacity 0.15s ease, transform 0.1s ease !important;
+}
+[data-testid="stChatInput"] button:hover {
+    opacity: 0.7 !important;
+}
+/* Attach (+) button and its wrappers — strip all borders */
+[data-testid="stChatInput"] button:not([data-testid="stChatInputSubmitButton"]) {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+[data-testid="stChatInput"] button:not([data-testid="stChatInputSubmitButton"]) svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+/* Any wrapper/div around the + button — kill borders */
+[data-testid="stChatInput"] > div > div,
+[data-testid="stChatInput"] [data-testid] {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+/* Send button — blue background, no border */
+[data-testid="stChatInputSubmitButton"],
+[data-testid="stChatInputSubmitButton"]:focus,
+[data-testid="stChatInputSubmitButton"]:focus-visible {
     background: #007AFF !important;
     border: none !important;
     border-radius: 50% !important;
+    box-shadow: none !important;
+    outline: none !important;
     width: 32px !important;
     height: 32px !important;
     min-width: 32px !important;
@@ -1385,38 +1614,33 @@ a:hover, .stMarkdown a:hover {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    cursor: pointer !important;
-    transition: background 0.15s ease, transform 0.1s ease !important;
-    box-shadow: none !important;
     margin: 0 4px !important;
 }
-[data-testid="stChatInputSubmitButton"]:hover,
-[data-testid="stChatInput"] button:hover {
+[data-testid="stChatInputSubmitButton"]:hover {
     background: #0066D6 !important;
+    opacity: 1 !important;
     transform: scale(1.08);
 }
-[data-testid="stChatInputSubmitButton"]:active,
-[data-testid="stChatInput"] button:active {
+[data-testid="stChatInputSubmitButton"]:active {
     transform: scale(0.94);
 }
-/* Arrow icon inside send button — make it white */
-[data-testid="stChatInputSubmitButton"] svg,
-[data-testid="stChatInput"] button svg {
+[data-testid="stChatInputSubmitButton"] svg {
     fill: #ffffff !important;
     stroke: #ffffff !important;
     color: #ffffff !important;
     width: 16px !important;
     height: 16px !important;
 }
-/* Disabled state — gray when empty */
-[data-testid="stChatInputSubmitButton"]:disabled,
-[data-testid="stChatInput"] button:disabled {
+/* Disabled send — gray, no border */
+[data-testid="stChatInputSubmitButton"]:disabled {
     background: #C7C7CC !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
     cursor: default !important;
     opacity: 1 !important;
 }
-[data-testid="stChatInputSubmitButton"]:disabled svg,
-[data-testid="stChatInput"] button:disabled svg {
+[data-testid="stChatInputSubmitButton"]:disabled svg {
     fill: #ffffff !important;
     stroke: #ffffff !important;
     color: #ffffff !important;
@@ -1475,10 +1699,15 @@ a:hover, .stMarkdown a:hover {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes lumiFloat {
     0%, 100% { transform: translateY(0); }
     50%      { transform: translateY(-8px); }
+}
+
+/* Background task pulsing dot */
+@keyframes lumi-pulse-bg {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.7); }
 }
 
 @keyframes lumiBubbleInRight {
@@ -1518,96 +1747,96 @@ a:hover, .stMarkdown a:hover {
     /* ── Off-screen ── */
     0% {
         transform: translateX(600px) translateY(0) scaleX(1) scaleY(1);
-        margin-left: -36px;
+        margin-left: -40px;
         opacity: 0;
     }
     /* ── Hop 1: big arc ── */
     6% {
         opacity: 1;
         transform: translateX(460px) translateY(0) scaleX(1) scaleY(1);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     10% {
         transform: translateX(320px) translateY(-65px) scaleX(0.86) scaleY(1.14);
-        margin-left: -36px;
+        margin-left: -40px;
         opacity: 1;
     }
     14% {
         transform: translateX(240px) translateY(0) scaleX(1.16) scaleY(0.84);
-        margin-left: -36px;
+        margin-left: -40px;
         opacity: 1;
     }
     /* micro-settle */
     16% {
         transform: translateX(240px) translateY(0) scaleX(1.02) scaleY(0.98);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Hop 2: medium arc ── */
     22% {
         transform: translateX(130px) translateY(-48px) scaleX(0.88) scaleY(1.12);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     27% {
         transform: translateX(65px) translateY(0) scaleX(1.12) scaleY(0.88);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* micro-settle */
     29% {
         transform: translateX(65px) translateY(0) scaleX(1.02) scaleY(0.98);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Hop 3: small arc, arrive ── */
     34% {
         transform: translateX(20px) translateY(-26px) scaleX(0.93) scaleY(1.07);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     38% {
         transform: translateX(0) translateY(0) scaleX(1.10) scaleY(0.90);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Settle — notices the "i" ── */
     42% {
         transform: translateX(0) translateY(0) scaleX(1) scaleY(1);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Anticipation crouch ── */
     48% {
         transform: translateX(0) translateY(6px) scaleX(1.20) scaleY(0.75);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── BIG JUMP — stretch tall ── */
     55% {
         transform: translateX(0) translateY(-140px) scaleX(0.74) scaleY(1.30);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Peak: hang in air ── */
     59% {
         transform: translateX(0) translateY(-155px) scaleX(0.78) scaleY(1.22);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── SLAM DOWN — squash the "i"! ── */
     67% {
         transform: translateX(0) translateY(5px) scaleX(1.32) scaleY(0.65);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Small rebound ── */
     74% {
         transform: translateX(0) translateY(-16px) scaleX(0.92) scaleY(1.08);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Settle back ── */
     80% {
         transform: translateX(0) translateY(3px) scaleX(1.05) scaleY(0.95);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     85% {
         transform: translateX(0) translateY(0) scaleX(1) scaleY(1);
-        margin-left: -36px;
+        margin-left: -40px;
     }
     /* ── Rest — DNA IS the "i" now ── */
     100% {
         transform: translateX(0) translateY(0) scaleX(1) scaleY(1);
-        margin-left: -36px;
+        margin-left: -40px;
         opacity: 1;
     }
 }
@@ -1686,8 +1915,8 @@ a:hover, .stMarkdown a:hover {
 
 /* ── Idle float after landing ── */
 @keyframes dnaIdleFloat {
-    0%, 100% { transform: translateX(0) translateY(0) scaleX(1) scaleY(1); margin-left: -27px; }
-    50%      { transform: translateX(0) translateY(-4px) scaleX(1) scaleY(1); margin-left: -27px; }
+    0%, 100% { transform: translateX(0) translateY(0) scaleX(1) scaleY(1); margin-left: -40px; }
+    50%      { transform: translateX(0) translateY(-4px) scaleX(1) scaleY(1); margin-left: -40px; }
 }
 
 /* ============================================================
@@ -1696,24 +1925,27 @@ a:hover, .stMarkdown a:hover {
 
 /* Accessibility: respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
-    .dna-char { animation: none !important; opacity: 1; transform: translateX(0) translateY(0); margin-left: -36px; }
+    .dna-char { animation: none !important; opacity: 1; transform: translateX(0) translateY(0); margin-left: -40px; }
     .lumi-letter-i { animation: none !important; transform: scaleY(0); opacity: 0; }
     .dna-pupil { animation: none !important; }
     .dna-eyelid { animation: none !important; transform: scaleY(0); }
     .dna-shadow { animation: none !important; opacity: 0.4; }
     .dna-body-group { animation: none !important; }
     .lumi-welcome-sub { animation: none !important; opacity: 1; }
+    .lumi-cursor { display: none !important; }
 }
 
 @media (max-width: 768px) {
-    .lumi-welcome { padding: 40px 16px 24px; }
-    .lumi-title { font-size: 72px !important; letter-spacing: -2.5px; padding-top: 120px; margin-top: -40px; }
+    .lumi-welcome-page { min-height: calc(100vh - 180px); min-height: calc(100dvh - 180px); padding-bottom: 48px; }
+    .lumi-welcome { padding: 0 16px 0; }
+    .lumi-title { font-size: 72px !important; letter-spacing: -2px; padding-top: 48px; margin-top: -16px; }
     .lumi-i-wrapper { width: 38px; font-size: 72px !important; }
     .lumi-letter-i { width: 38px; font-size: 72px !important; }
-    .dna-char { width: 35px; height: 52px; }
-    .dna-slot { width: 44px; height: 60px; }
+    .dna-char { width: 42px !important; height: 63px !important; min-width: 42px !important; min-height: 63px !important; }
+    .dna-slot { width: 52px !important; height: 80px !important; bottom: 10px; }
     .lumi-welcome-pills { gap: 6px; }
     .lumi-pill { font-size: 12px; height: 32px; padding: 0 12px; }
+    .lumi-welcome-sub { font-size: 24px; }
     .lumi-bubble { max-width: 88%; }
     .lumi-composer-row { width: 96%; }
     .lumi-composer-input { height: 44px; font-size: 0.88rem; }

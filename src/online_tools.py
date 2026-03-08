@@ -71,12 +71,12 @@ def fold_sequence(sequence: str) -> dict:
     Endpoint: POST https://api.esmatlas.com/foldSequence/v1/pdb/
     """
     try:
-        sequence = sequence.strip().replace("\n", "").replace(" ", "")
-        # Remove FASTA header if present
+        sequence = sequence.strip()
+        # Remove FASTA header if present (must check before stripping newlines)
         if sequence.startswith(">"):
-            lines = sequence.split("\n") if "\n" in sequence else sequence.split(">")
-            sequence = "".join(l for l in lines if not l.startswith(">"))
-            sequence = sequence.strip().replace("\n", "").replace(" ", "")
+            lines = sequence.split("\n")
+            sequence = "".join(l.strip() for l in lines if not l.startswith(">"))
+        sequence = sequence.replace("\n", "").replace(" ", "").replace("\r", "")
 
         if len(sequence) > 400:
             return {
@@ -110,6 +110,10 @@ def fold_sequence(sequence: str) -> dict:
             except (ValueError, IndexError):
                 pass
 
+        # ESMFold B-factors may be on 0–1 scale; normalize to 0–100
+        if plddt_values and max(plddt_values) <= 1.0:
+            plddt_values = [p * 100 for p in plddt_values]
+
         avg_plddt = sum(plddt_values) / len(plddt_values) if plddt_values else 0
         low_conf = sum(1 for p in plddt_values if p < 70)
 
@@ -139,6 +143,8 @@ def lookup_alphafold(uniprot_id: str) -> dict:
     """
     try:
         uniprot_id = uniprot_id.strip().upper()
+        if not uniprot_id:
+            return {"error": "UniProt ID is required."}
 
         # Get metadata
         meta = _get(f"https://alphafold.ebi.ac.uk/api/prediction/{uniprot_id}")
@@ -188,7 +194,10 @@ def get_protein_info(query: str) -> dict:
         query = query.strip()
 
         # If it looks like a gene name, search for it first
-        if not (len(query) == 6 and query[0].isalpha() and query[1:].isalnum()):
+        # UniProt IDs are 6 or 10 chars with digits (e.g. P04637, A0A090N7W4)
+        import re
+        _is_uniprot = bool(re.match(r'^[A-Z][0-9A-Z]{5,9}$', query)) and any(c.isdigit() for c in query)
+        if not _is_uniprot:
             # Search UniProt
             search_url = "https://rest.uniprot.org/uniprotkb/search"
             results = _get(search_url, params={
@@ -657,7 +666,9 @@ def classify_domains(uniprot_id_or_gene: str) -> dict:
         query = uniprot_id_or_gene.strip()
 
         # Resolve gene name to UniProt ID if needed
-        if not (len(query) >= 6 and query[0].isalpha()):
+        # UniProt IDs: 6 or 10 chars with digits (e.g. P04637, A0A090N7W4)
+        import re
+        if not (re.match(r'^[A-Z][0-9A-Z]{5,9}$', query) and any(c.isdigit() for c in query)):
             info = get_protein_info(query)
             if "error" in info:
                 return info
@@ -816,6 +827,8 @@ def search_literature(query: str, limit: int = 10, year_min: int | None = None) 
     """
     try:
         query = query.strip()
+        if not query:
+            return {"error": "Search query is required."}
         params: dict = {
             "query": query,
             "limit": min(limit, 20),
@@ -882,6 +895,8 @@ def search_pdb_structures(query: str, limit: int = 5) -> dict:
     """
     try:
         query = query.strip()
+        if not query:
+            return {"error": "Search query is required. Provide a protein name, gene, or PDB ID."}
 
         # Use RCSB Search API
         search_body = {
@@ -1003,10 +1018,11 @@ def get_pharmacogenomics(gene_or_drug: str) -> dict:
             if gene_id:
                 try:
                     ann_resp = _get(
-                        "https://api.pharmgkb.org/v1/data/clinicalAnnotation",
-                        params={"relatedGenes.accessionId": gene_id},
+                        f"https://api.pharmgkb.org/v1/data/clinicalAnnotation/byGene/{gene_id}",
                     )
                     ann_list = ann_resp.get("data", []) if isinstance(ann_resp, dict) else []
+                    if not ann_list and isinstance(ann_resp, list):
+                        ann_list = ann_resp
                     for ann in ann_list[:8]:
                         chemicals = ann.get("relatedChemicals", []) or []
                         diseases = ann.get("relatedDiseases", []) or []
@@ -1046,6 +1062,8 @@ def search_europe_pmc(query: str, limit: int = 10) -> dict:
     """
     try:
         query = query.strip()
+        if not query:
+            return {"error": "Search query is required."}
         data = _get(
             "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
             params={

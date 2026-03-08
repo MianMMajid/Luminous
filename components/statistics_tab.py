@@ -41,10 +41,13 @@ _STATS_DEFAULTS: dict[str, Any] = {
     "stats_data": None,
     "stats_data_source": "Enter / Paste",
     "stats_test_category": "Compare Two Groups",
-    "stats_analysis_mode": "Statistical Tests",
+    "stats_analysis_mode": "Claude Analysis",
     "stats_results": None,
     "stats_survival_data": None,
     "stats_col_types": None,
+    # Claude Analysis state
+    "stats_claude_messages": [],
+    "stats_claude_results": [],
 }
 
 
@@ -66,11 +69,10 @@ def render_statistics():
 
     # Header
     st.markdown(
-        '<div style="margin-bottom:16px">'
-        '<span style="font-size:1.4rem;font-weight:700">Statistics</span>'
-        '<span style="font-size:0.9rem;color:rgba(60,60,67,0.5);margin-left:10px">'
-        "Hypothesis testing, curve fitting, and survival analysis"
-        "</span></div>",
+        '<div class="lumi-tab-header">'
+        '<div class="tab-title">Statistics</div>'
+        '<div class="tab-subtitle">Hypothesis testing, curve fitting, and survival analysis</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -91,20 +93,37 @@ def render_statistics():
 
     df: pd.DataFrame | None = st.session_state.get("stats_data")
     if df is None or len(df) == 0:
+        # Prominent Claude Analysis callout when no data is loaded yet
+        st.markdown(
+            '<div style="padding:20px 24px;border-radius:16px;'
+            'background:linear-gradient(135deg,rgba(100,143,255,0.08),rgba(120,94,240,0.08));'
+            'border:1px solid rgba(100,143,255,0.15);margin:16px 0 12px;text-align:center">'
+            '<div style="font-size:1.8rem;margin-bottom:6px">🧪</div>'
+            '<div style="font-weight:700;font-size:1.05rem;margin-bottom:6px">'
+            'Claude Analysis — Your AI Statistician</div>'
+            '<div style="color:rgba(60,60,67,0.6);font-size:0.88rem;max-width:520px;margin:0 auto">'
+            'Upload CSV data above, then describe any analysis in plain English. '
+            'Claude handles t-tests, ANOVA, dose-response curves, PCA, survival analysis, '
+            'regressions, and 100+ more — no code required.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         st.info("Load or enter data above to begin statistical analysis.")
         return
 
     st.divider()
 
-    # Section 2 -- Analysis mode selector
+    # Section 2 -- Analysis mode selector (Claude Analysis first — most powerful)
     mode = st.radio(
         "Analysis type",
-        ["Statistical Tests", "Curve Fitting", "Survival Analysis"],
+        ["Claude Analysis", "Statistical Tests", "Curve Fitting", "Survival Analysis"],
         horizontal=True,
         key="stats_analysis_mode",
     )
 
-    if mode == "Statistical Tests":
+    if mode == "Claude Analysis":
+        _render_claude_analysis_section(df)
+    elif mode == "Statistical Tests":
         _render_tests_section(df)
     elif mode == "Curve Fitting":
         _render_fitting_section(df)
@@ -112,8 +131,9 @@ def render_statistics():
         _render_survival_section()
 
     # Section 6 -- Advanced (PCA, K-means, Multiple regression)
-    st.divider()
-    _render_advanced_section(df)
+    if mode != "Claude Analysis":
+        st.divider()
+        _render_advanced_section(df)
 
 
 # ===================================================================
@@ -260,7 +280,6 @@ def _render_from_analysis_entry():
                 "plddt": prediction.plddt_per_residue,
             })
             st.session_state["stats_data"] = df
-            st.rerun()
 
     with cols[1]:
         has_regions = trust_audit and trust_audit.regions
@@ -278,7 +297,6 @@ def _render_from_analysis_entry():
                 "flagged": bool(r.flag),
             } for r in trust_audit.regions])
             st.session_state["stats_data"] = df
-            st.rerun()
 
     with cols[2]:
         has_disease = bio_context and bio_context.disease_associations
@@ -294,7 +312,6 @@ def _render_from_analysis_entry():
                 "evidence": d.evidence,
             } for d in bio_context.disease_associations])
             st.session_state["stats_data"] = df
-            st.rerun()
 
     with cols[3]:
         has_affinity = (
@@ -310,7 +327,6 @@ def _render_from_analysis_entry():
         ):
             df = pd.DataFrame(prediction.affinity_json["poses"])
             st.session_state["stats_data"] = df
-            st.rerun()
 
     # Row 2: Additional analysis data
     query = st.session_state.get("parsed_query")
@@ -333,7 +349,6 @@ def _render_from_analysis_entry():
                 "flexibility": flex_data["flexibility"],
             })
             st.session_state["stats_data"] = df
-            st.rerun()
 
     with cols2[1]:
         pocket_key = f"pockets_{query_name}"
@@ -351,7 +366,6 @@ def _render_from_analysis_entry():
                 "pocket_score": list(scores.values()),
             })
             st.session_state["stats_data"] = df
-            st.rerun()
 
     with cols2[2]:
         # Combined multi-track export
@@ -387,7 +401,6 @@ def _import_combined_residue_data(prediction, query_name: str):
 
     df = pd.DataFrame(data)
     st.session_state["stats_data"] = df
-    st.rerun()
 
 
 def _render_data_preview(df: pd.DataFrame):
@@ -666,7 +679,7 @@ def _execute_test(test_name: str, df: pd.DataFrame, sel: dict):
         check_equal_variance,
     )
 
-    with st.spinner(f"Running {test_name}..."):
+    with st.status(f"Running {test_name}..."):
         try:
             result = _dispatch_test(
                 test_name, df, sel,
@@ -1106,7 +1119,7 @@ def _render_fitting_section(df: pd.DataFrame):
         x_data = x_data[:min_len]
         y_data = y_data[:min_len]
 
-        with st.spinner("Fitting curve..."):
+        with st.status("Fitting curve..."):
             try:
                 result = fit_curve(
                     x_data, y_data, eq_name,
@@ -1335,7 +1348,7 @@ def _render_survival_section():
     from src.statistics_charts import build_survival_chart
 
     if run_km:
-        with st.spinner("Running Kaplan-Meier estimation..."):
+        with st.status("Running Kaplan-Meier estimation..."):
             try:
                 group_arr = surv_df["group"].values if has_group else None
                 km_result = run_kaplan_meier(
@@ -1371,7 +1384,7 @@ def _render_survival_section():
         )
 
     if run_lr and has_group:
-        with st.spinner("Running log-rank test..."):
+        with st.status("Running log-rank test..."):
             try:
                 lr_result = run_logrank(
                     surv_df["time"].values,
@@ -1397,7 +1410,7 @@ def _render_survival_section():
             )
 
     if run_cox and covariate_cols:
-        with st.spinner("Fitting Cox PH model..."):
+        with st.status("Fitting Cox PH model..."):
             try:
                 cox_result = run_cox_regression(
                     surv_df,
@@ -1493,7 +1506,7 @@ def _render_pca(df: pd.DataFrame, numeric_cols: list[str]):
     )
 
     if st.button("Run PCA", key="stats_run_pca"):
-        with st.spinner("Running PCA..."):
+        with st.status("Running PCA..."):
             try:
                 result = run_pca(df[numeric_cols], n_components=n_comp)
             except Exception as e:
@@ -1544,7 +1557,7 @@ def _render_kmeans(df: pd.DataFrame, numeric_cols: list[str]):
     )
 
     if st.button("Run K-means", key="stats_run_kmeans"):
-        with st.spinner("Running K-means clustering..."):
+        with st.status("Running K-means clustering..."):
             try:
                 result = run_kmeans(df[numeric_cols], max_k=max_k)
             except Exception as e:
@@ -1603,7 +1616,7 @@ def _render_multiple_regression(df: pd.DataFrame, numeric_cols: list[str]):
         return
 
     if st.button("Run Regression", key="stats_run_multreg"):
-        with st.spinner("Fitting multiple regression..."):
+        with st.status("Fitting multiple regression..."):
             try:
                 result = run_multiple_regression(df, target, predictors)
             except Exception as e:
@@ -1655,3 +1668,194 @@ def _render_multiple_regression(df: pd.DataFrame, numeric_cols: list[str]):
                 chart_json=fig_diag.to_json(),
                 key="pin_stats_multreg",
             )
+
+
+# ===================================================================
+# SECTION: CLAUDE ANALYSIS (natural language → code → results)
+# ===================================================================
+
+_CLAUDE_EXAMPLES = [
+    "Run a two-way ANOVA with post-hoc Tukey and interaction plot",
+    "Perform PCA, show biplot colored by K-means clusters (k=3)",
+    "Fit a 4PL dose-response curve and compute IC50 with CI",
+    "Kaplan-Meier survival analysis with log-rank test by group",
+    "Check normality of all numeric columns and suggest tests",
+    "Correlation matrix with hierarchical clustering dendrogram",
+    "Repeated measures ANOVA with Greenhouse-Geisser correction",
+    "Bland-Altman agreement plot for method comparison",
+    "Volcano plot: fold-change vs significance across conditions",
+]
+
+
+def _render_claude_analysis_section(df: pd.DataFrame):
+    """Natural-language statistical analysis powered by Claude."""
+    st.markdown(
+        '<div style="padding:12px 16px;border-radius:12px;'
+        'background:linear-gradient(135deg,rgba(100,143,255,0.06),rgba(120,94,240,0.06));'
+        'border:1px solid rgba(100,143,255,0.12);margin-bottom:16px">'
+        '<div style="font-weight:700;font-size:1rem;margin-bottom:4px">Claude Analysis</div>'
+        '<span style="color:rgba(60,60,67,0.55);font-size:0.88rem">'
+        'Describe any analysis in plain English — t-tests, ANOVA, dose-response, '
+        'survival, PCA, custom regressions, and more. Claude writes and runs the code.'
+        '</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Quick-start example chips
+    st.caption("Try an example:")
+    cols = st.columns(3)
+    for i, prompt in enumerate(_CLAUDE_EXAMPLES[:9]):
+        with cols[i % 3]:
+            short = prompt[:48] + "…" if len(prompt) > 48 else prompt
+            if st.button(short, key=f"stats_cex_{i}", use_container_width=True):
+                st.session_state["_claude_pending_prompt"] = prompt
+                st.rerun()
+
+    # Pending prompt from example button
+    pending = st.session_state.pop("_claude_pending_prompt", "")
+
+    # Text input
+    user_input = st.text_area(
+        "Describe your analysis",
+        value=pending,
+        height=90,
+        placeholder="e.g. 'Compare groups A vs B with the right test, show effect size and power'",
+        key="stats_claude_textarea",
+    )
+
+    # Controls row
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        run_clicked = st.button(
+            "Run Analysis", key="stats_claude_run", type="primary",
+            disabled=not (user_input and user_input.strip()),
+        )
+    with c2:
+        use_opus = st.checkbox("Opus (thorough)", key="stats_claude_opus")
+    with c3:
+        if st.button("Clear History", key="stats_claude_clear"):
+            st.session_state["stats_claude_messages"] = []
+            st.session_state["stats_claude_results"] = []
+            st.rerun()
+
+    if run_clicked and user_input and user_input.strip():
+        _execute_claude_pipeline(df, user_input.strip(), use_opus)
+
+    # Display results history
+    _render_claude_results()
+
+
+def _execute_claude_pipeline(df: pd.DataFrame, prompt: str, use_opus: bool):
+    """Prompt → Claude → code → sandbox exec → render."""
+    from src.claude_analysis import execute_analysis_code, run_claude_analysis
+
+    with st.status("Claude is analyzing…", expanded=True) as status:
+        # Step 1: get code from Claude
+        st.write("Generating analysis code…")
+        code, explanation, messages = run_claude_analysis(
+            user_prompt=prompt,
+            df=df,
+            conversation_history=st.session_state.get("stats_claude_messages", []),
+            previous_results=st.session_state.get("stats_claude_results", []),
+            use_opus=use_opus,
+        )
+        st.session_state["stats_claude_messages"] = messages
+
+        if not code:
+            st.session_state["stats_claude_results"].append({
+                "prompt": prompt, "error": explanation or "No code generated.",
+                "code": "", "tables": [], "figures": [], "text": "", "warnings": [],
+                "execution_time": 0.0,
+            })
+            status.update(label="Analysis failed", state="error")
+            st.rerun()
+            return
+
+        # Step 2: execute in sandbox
+        st.write("Running code…")
+        result = execute_analysis_code(code, df)
+
+        entry = {
+            "prompt": prompt,
+            "explanation": explanation,
+            "code": code,
+            "tables": result["tables"],
+            "figures": [f.to_json() for f in result["figures"]],  # serialize for session state
+            "text": result["text"],
+            "warnings": result["warnings"],
+            "error": result["error"],
+            "execution_time": result["execution_time"],
+        }
+        st.session_state["stats_claude_results"].append(entry)
+
+        if result["error"]:
+            status.update(label="Execution error — try 'Auto-fix'", state="error")
+        else:
+            status.update(label="Analysis complete", state="complete")
+
+    st.rerun()
+
+
+def _render_claude_results():
+    """Render the conversation-style analysis history."""
+    results = st.session_state.get("stats_claude_results", [])
+    if not results:
+        return
+
+    for i, r in enumerate(results):
+        # User prompt
+        st.markdown(
+            f'<div style="padding:8px 14px;border-radius:10px;'
+            f'background:rgba(0,122,255,0.06);margin:12px 0 6px;font-size:0.92rem">'
+            f'<b>You:</b> {r.get("prompt", "")}</div>',
+            unsafe_allow_html=True,
+        )
+
+        if r.get("error"):
+            st.error(r["error"][:1500])
+            with st.expander("Generated code (failed)", expanded=False):
+                st.code(r.get("code", ""), language="python")
+            if st.button("Auto-fix & Retry", key=f"stats_cretry_{i}"):
+                df = st.session_state.get("stats_data")
+                if df is not None:
+                    _execute_claude_pipeline(df, f"Fix and retry: {r['prompt']}", False)
+            continue
+
+        # Explanation
+        if r.get("explanation"):
+            st.markdown(r["explanation"])
+
+        # Text interpretation from executed code
+        if r.get("text"):
+            st.markdown(r["text"])
+
+        # Warnings
+        for w in r.get("warnings", []):
+            st.warning(w)
+
+        # Tables
+        for j, tbl in enumerate(r.get("tables", [])):
+            if isinstance(tbl, pd.DataFrame):
+                st.dataframe(tbl, use_container_width=True)
+            elif isinstance(tbl, dict):
+                st.dataframe(pd.DataFrame(tbl), use_container_width=True)
+
+        # Figures (stored as JSON strings)
+        for j, fig_json in enumerate(r.get("figures", [])):
+            try:
+                fig = go.Figure(json.loads(fig_json) if isinstance(fig_json, str) else fig_json)
+                st.plotly_chart(fig, use_container_width=True)
+                pin_button(
+                    title=f"Claude: {r.get('prompt', '')[:40]}",
+                    summary=r.get("text", "")[:200],
+                    insight_type="chart",
+                    chart_json=fig_json if isinstance(fig_json, str) else json.dumps(fig_json),
+                    key=f"pin_claude_{i}_{j}",
+                )
+            except Exception:
+                pass
+
+        # Expandable code view
+        with st.expander("View code", expanded=False):
+            st.code(r.get("code", ""), language="python")
+            st.caption(f"Executed in {r.get('execution_time', 0):.2f}s")

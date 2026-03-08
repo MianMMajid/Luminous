@@ -688,6 +688,7 @@ def generate_pdf_report(
     interpretation: str | None,
     variant_data: dict | None = None,
     drug_resistance_data: list[dict] | None = None,
+    video_frame: bytes | None = None,
 ) -> bytes:
     """Generate a complete PDF report and return raw bytes."""
     pdf = LuminousPDF()
@@ -947,6 +948,10 @@ def generate_pdf_report(
                 "Drug x Mutation resistance matrix. Blue = therapeutic target, "
                 "Green = sensitizing, Red = resistant.")
 
+    # ── Video Animation Page ──
+    if video_frame is not None:
+        _render_video_page(pdf, query, video_frame)
+
     # ── BioRender Recommendations ──
     _render_biorender_recommendations(pdf, query)
 
@@ -959,7 +964,60 @@ def generate_pdf_report(
     # ── Final: Disclaimer ──
     _render_disclaimer(pdf, report_id)
 
-    return pdf.output()
+    pdf_output = pdf.output()
+    # fpdf may return bytearray depending on runtime/version; normalize to bytes.
+    return bytes(pdf_output) if isinstance(pdf_output, bytearray) else pdf_output
+
+
+def _render_video_page(pdf: "LuminousPDF", query: ProteinQuery, video_frame: bytes):
+    """Add a page with a video thumbnail frame and caption."""
+    pdf.add_page()
+    pdf.section_header("Protein Animation")
+
+    mut_label = f" ({query.mutation})" if query.mutation else ""
+    pdf.set_font(pdf._FONT, "", 9)
+    pdf.set_text_color(*_TEXT)
+    pdf.multi_cell(
+        0, 5,
+        f"AI-generated cinematic animation of {query.protein_name}{mut_label} "
+        f"created using Google Veo. The frame below shows a representative snapshot "
+        f"from the generated video. The full MP4 video is available for download "
+        f"in the Luminous app.",
+    )
+    pdf.ln(4)
+
+    # Embed the frame image
+    try:
+        frame_buf = io.BytesIO(video_frame)
+        if pdf.get_y() + 110 > 275:
+            pdf.add_page()
+        pdf.image(frame_buf, x=25, w=160)
+        pdf.ln(3)
+
+        num = pdf.next_fig()
+        pdf.set_font(pdf._FONT, "I", 7)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(
+            0, 4,
+            f"Figure {num}. Representative frame from AI-generated protein animation "
+            f"({query.protein_name}{mut_label}).",
+            align="C", new_x="LMARGIN", new_y="NEXT",
+        )
+    except Exception:
+        pdf.set_font(pdf._FONT, "I", 8)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, 5, "[Video frame could not be embedded]", align="C",
+                 new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(6)
+    pdf.set_font(pdf._FONT, "", 8)
+    pdf.set_text_color(*_MUTED)
+    pdf.multi_cell(
+        0, 4,
+        "Animation powered by Google Veo (Gemini API). "
+        "Video generation uses the protein structure screenshot as input "
+        "and produces a short cinematic visualization.",
+    )
 
 
 # ─── Page Renderers ──────────────────────────────────────────────

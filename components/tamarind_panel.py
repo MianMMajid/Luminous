@@ -63,7 +63,6 @@ def render_tamarind_panel(
         _render_results(cached_results, query)
         if st.button("Re-run Analysis", key="tam_rerun"):
             st.session_state.pop(cache_key, None)
-            st.rerun()
         return
 
     # Tool selector
@@ -111,7 +110,10 @@ def render_tamarind_panel(
         key="tam_run",
     ):
         _execute_analyses(query, prediction, selected, drug_smiles, cache_key)
-        st.rerun()
+        # Render results inline (no st.rerun — avoids tab jump)
+        cached_results = st.session_state.get(cache_key)
+        if cached_results:
+            _render_results(cached_results, query)
 
 
 def _execute_analyses(

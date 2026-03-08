@@ -146,11 +146,11 @@ def _render_recent_projects():
 def _serialize_session() -> dict:
     """Serialize all relevant session state into a JSON-safe dict."""
     data: dict = {
-        "luminous_project_version": "1.0",
+        "luminous_project_version": "1.1",
         "saved_at": datetime.now().isoformat(),
     }
 
-    # Query
+    # Pydantic-model keys (use model_dump when available)
     for state_key in ("parsed_query", "prediction_result", "trust_audit", "bio_context"):
         obj = st.session_state.get(state_key)
         if obj is not None:
@@ -166,26 +166,61 @@ def _serialize_session() -> dict:
     data["raw_query"] = st.session_state.get("raw_query", "")
     data["query_parsed"] = st.session_state.get("query_parsed", False)
 
-    # Interpretation
-    interp = st.session_state.get("interpretation")
-    if interp is not None:
-        data["interpretation"] = interp
+    # Plain-value keys — store anything that is JSON-safe
+    _PLAIN_KEYS = [
+        "interpretation", "chat_messages", "experiment_tracker",
+        "stats_data", "stats_results", "stats_survival_data",
+        "structure_analysis", "generated_hypotheses",
+        "panel_figure_data", "graphical_abstract_svg",
+        "figure_checklist_state", "sketch_interpretation",
+        "comparison_data", "playground_pinned", "playground_plan",
+        "playground_inspiration",
+    ]
+    for key in _PLAIN_KEYS:
+        val = st.session_state.get(key)
+        if val is not None:
+            try:
+                json.loads(json.dumps(val, default=str))  # verify serializable
+                data[key] = val
+            except (TypeError, ValueError):
+                pass
 
-    # Chat messages
-    messages = st.session_state.get("chat_messages", [])
-    if messages:
-        data["chat_messages"] = messages
-
-    # Experiment tracker
-    tracker = st.session_state.get("experiment_tracker")
-    if tracker:
-        data["experiment_tracker"] = tracker
+    # Dynamic per-protein caches (variant_data_*, etc.)
+    _DYN_PREFIXES = (
+        "variant_data_", "variant_enrichment_",
+        "alphamissense_", "domains_", "flexibility_",
+        "pockets_", "struct_analysis_", "alphafold_",
+        "tamarind_results_", "svg_diagram_",
+    )
+    dyn: dict = {}
+    for k, v in st.session_state.items():
+        if isinstance(k, str) and k.startswith(_DYN_PREFIXES):
+            try:
+                json.loads(json.dumps(v, default=str))
+                dyn[k] = v
+            except (TypeError, ValueError):
+                pass
+    if dyn:
+        data["_dynamic_caches"] = dyn
 
     return data
 
 
 def _deserialize_session(data: dict):
-    """Restore session state from a project dict."""
+    """Restore session state from a project dict.
+
+    Clears ALL analysis state first so that no stale artifacts from the
+    current session survive into the loaded project.
+    """
+    # ── Wipe existing analysis state ──
+    from app import reset_results
+    reset_results()
+    # Also clear query-level state that reset_results doesn't touch
+    st.session_state["parsed_query"] = None
+    st.session_state["query_parsed"] = False
+    st.session_state["raw_query"] = ""
+    st.session_state["chat_messages"] = []
+
     # Query
     if "parsed_query" in data:
         try:
