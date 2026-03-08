@@ -31,7 +31,7 @@
 /* --- Global Polish --- */
 .block-container {
     padding-top: 0 !important;
-    padding-bottom: 120px !important;
+    padding-bottom: 60px !important;
     letter-spacing: -0.2px;
 }
 /* Remove Streamlit's default top header spacing */
@@ -264,7 +264,7 @@ div[data-testid="stBottom"] {
 }
 /* Enough bottom padding so content never hides behind the fixed chat input */
 [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] {
-    padding-bottom: 120px !important;
+    padding-bottom: 40px !important;
 }
 
 /* --- Buttons (Glassy Black Rounded) --- */
@@ -451,8 +451,8 @@ details[data-testid="stExpander"][open] {
     transition: all 0.15s ease;
 }
 .pipeline-step.done {
-    background: rgba(52, 199, 89, 0.08);
-    border-left: 3px solid #34C759;
+    background: rgba(4, 120, 87, 0.08);
+    border-left: 3px solid #047857;
 }
 .pipeline-step.pending {
     background: rgba(0, 0, 0, 0.02);
@@ -681,8 +681,8 @@ h4 {
     background: rgba(0, 0, 0, 0.03);
     border: 1px solid rgba(0, 0, 0, 0.06);
 }
-.status-badge.success { background: rgba(52, 199, 89, 0.1); border-color: #34C759; color: #34C759; }
-.status-badge.warning { background: rgba(255, 149, 0, 0.1); border-color: #FF9500; color: #FF9500; }
+.status-badge.success { background: rgba(4, 120, 87, 0.1); border-color: #047857; color: #047857; }
+.status-badge.warning { background: rgba(180, 83, 9, 0.1); border-color: #B45309; color: #B45309; }
 .status-badge.error { background: rgba(255, 59, 48, 0.1); border-color: #FF3B30; color: #FF3B30; }
 .status-badge.info { background: rgba(0, 122, 255, 0.1); border-color: #007AFF; color: #007AFF; }
 
@@ -845,14 +845,14 @@ a:hover, .stMarkdown a:hover {
        repeated here for the Judge UI section's own scope */
 }
 
-/* ── Welcome Page — compact, no viewport fill ── */
+/* ── Welcome Page — compact, everything above the fold ── */
 .lumi-welcome-page {
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 100%;
     overflow: visible;
-    padding: 24px 0 16px;
+    padding: 0 0 8px;
     box-sizing: border-box;
 }
 /* ── Welcome State (hero section inside page) ── */
@@ -860,7 +860,7 @@ a:hover, .stMarkdown a:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     padding: 0 24px 0;
     animation: lumiWelcomeFadeIn 0.5s var(--lumi-ease-spring) both;
     overflow: visible;
@@ -913,12 +913,12 @@ a:hover, .stMarkdown a:hover {
 .lumi-welcome-sub {
     margin: 0;
     font-family: 'Caveat', cursive;
-    font-size: 30px;
+    font-size: 24px;
     font-weight: 600;
     color: rgba(60, 60, 67, 0.65);
     text-align: center;
-    max-width: 640px;
-    line-height: 1.5;
+    max-width: 580px;
+    line-height: 1.4;
 }
 /* Typewriter cursor (kept for potential reuse) */
 .lumi-cursor {
@@ -949,7 +949,7 @@ a:hover, .stMarkdown a:hover {
 .lumi-title {
     margin: 0 auto !important;
     font-family: var(--font-display) !important;
-    font-size: 148px !important;
+    font-size: 120px !important;
     font-weight: 900 !important;
     color: var(--lumi-ink) !important;
     text-align: center;
@@ -961,9 +961,9 @@ a:hover, .stMarkdown a:hover {
     line-height: 1 !important;
     user-select: none;
     overflow: visible;
-    /* Top clearance for the DNA jump arc — parents have overflow:visible */
-    padding-top: 80px;
-    margin-top: -32px;
+    /* Minimal clearance for DNA jump arc */
+    padding-top: 24px;
+    margin-top: -8px;
     width: 100%;
 }
 
@@ -1035,14 +1035,18 @@ a:hover, .stMarkdown a:hover {
 .dna-pupil {
     fill: #1a1a1a;
     animation: dnaLookAround 4.5s ease forwards,
-               dnaIdleLook 4s 5s ease-in-out infinite;
+               dnaIdleLook 12s 5s ease-in-out infinite;
 }
 .dna-eyelid {
     fill: #E8E8ED;
     transform-origin: center 9px;
     transform: scaleY(0);
     animation: dnaBlinkSequence 4.5s ease forwards,
-               dnaIdleBlink 4s 5s ease-in-out infinite;
+               dnaIdleBlinkLeft 12s 5s ease-in-out infinite;
+}
+.dna-eyelid-r {
+    animation: dnaBlinkSequence 4.5s ease forwards,
+               dnaIdleBlinkWink 12s 5s ease-in-out infinite;
 }
 /* Strand colors */
 .dna-strand-blue { stroke: #007AFF; fill: none; stroke-width: 2.8; stroke-linecap: round; }

@@ -21,6 +21,8 @@ from typing import Any
 from src.config import TAMARIND_API_KEY
 from src.models import ProteinQuery
 
+_TOOL_TIMEOUT_SEC = 45
+
 
 def is_available() -> bool:
     return bool(TAMARIND_API_KEY)
@@ -261,7 +263,16 @@ async def _run_safe(
 ) -> dict[str, Any]:
     """Run a single analysis with error handling."""
     try:
-        return await _run_single_analysis(tool_key, query, pdb_content, drug_smiles)
+        return await asyncio.wait_for(
+            _run_single_analysis(tool_key, query, pdb_content, drug_smiles),
+            timeout=_TOOL_TIMEOUT_SEC,
+        )
+    except asyncio.TimeoutError:
+        return {
+            "tool": tool_key,
+            "type": "error",
+            "error": f"Timed out after {_TOOL_TIMEOUT_SEC}s",
+        }
     except Exception as e:
         return {
             "tool": tool_key,

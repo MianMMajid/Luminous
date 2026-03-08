@@ -129,16 +129,14 @@ def render_residue_dashboard(
     )
     all_labels = [t["label"] for t in _TRACK_DEFS if t["key"] in available_tracks]
 
-    # Smart defaults: show only tracks relevant to the scientist's question
+    # Smart defaults: show 4-5 essential tracks to avoid overwhelming users.
+    # Additional tracks are still selectable via the multiselect widget.
     _REC: dict[str, set[str]] = {
-        "structure": {"plddt", "sasa", "secondary_structure", "packing",
-                      "ramachandran", "residue_depth"},
-        "mutation_impact": {"plddt", "alphamissense", "conservation", "variants",
-                            "sasa", "centrality", "residue_depth"},
-        "druggability": {"plddt", "pocket_score", "sasa", "hydrophobicity",
-                         "centrality", "conservation"},
-        "binding": {"plddt", "sasa", "packing", "centrality",
-                    "hydrophobicity", "charge"},
+        "structure": {"plddt", "sasa", "secondary_structure", "packing"},
+        "mutation_impact": {"plddt", "variants", "sasa", "centrality",
+                            "conservation"},
+        "druggability": {"plddt", "pocket_score", "sasa", "centrality"},
+        "binding": {"plddt", "sasa", "packing", "hydrophobicity"},
     }
     rec_keys = _REC.get(query.question_type, set())
     if rec_keys:

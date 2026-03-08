@@ -6,6 +6,7 @@ Zero system dependencies — pure Python.
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import io
 import re
@@ -65,6 +66,7 @@ def _plddt_color(score: float) -> tuple[int, int, int]:
 
 # ─── Font Discovery ──────────────────────────────────────────────
 
+@functools.lru_cache(maxsize=1)
 def _find_fonts() -> tuple[str, str, str, str]:
     """Find Unicode-capable TTF fonts. Returns (regular, bold, italic, bold_italic)."""
     candidates = [
@@ -1222,24 +1224,6 @@ def _render_structural_insights_page(
     except ImportError:
         return
 
-    # Gather variant positions
-    pathogenic_positions = {}
-    if variant_data and variant_data.get("pathogenic_positions"):
-        for pos_key, names in variant_data["pathogenic_positions"].items():
-            try:
-                pathogenic_positions[int(pos_key)] = names
-            except (ValueError, TypeError):
-                pass
-
-    # Gather pocket residues
-    pocket_residues = []
-    try:
-        from components.drug_resistance import _RESISTANCE_DB
-        data = _RESISTANCE_DB.get(query.protein_name.upper(), {})
-        pocket_residues = data.get("binding_pocket_residues", [])
-    except ImportError:
-        pass
-
     # Parse mutation position
     mutation_pos = None
     if query.mutation:
@@ -1247,17 +1231,40 @@ def _render_structural_insights_page(
         if m:
             mutation_pos = int(m.group(1))
 
-    try:
-        first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
-        analysis = analyze_structure(
-            prediction.pdb_content,
-            mutation_pos=mutation_pos,
-            variant_positions=pathogenic_positions or None,
-            pocket_residues=pocket_residues,
-            first_chain=first_chain,
-        )
-    except Exception:
-        return
+    # Try cached structural analysis first (already computed by structural_insights tab)
+    import streamlit as st
+    cache_key = f"struct_analysis_{query.protein_name}_{query.mutation}"
+    analysis = st.session_state.get(cache_key) or st.session_state.get("structure_analysis")
+
+    if analysis is None:
+        # Fallback: compute if not cached
+        pathogenic_positions = {}
+        if variant_data and variant_data.get("pathogenic_positions"):
+            for pos_key, names in variant_data["pathogenic_positions"].items():
+                try:
+                    pathogenic_positions[int(pos_key)] = names
+                except (ValueError, TypeError):
+                    pass
+
+        pocket_residues = []
+        try:
+            from components.drug_resistance import _RESISTANCE_DB
+            data = _RESISTANCE_DB.get(query.protein_name.upper(), {})
+            pocket_residues = data.get("binding_pocket_residues", [])
+        except ImportError:
+            pass
+
+        try:
+            first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
+            analysis = analyze_structure(
+                prediction.pdb_content,
+                mutation_pos=mutation_pos,
+                variant_positions=pathogenic_positions or None,
+                pocket_residues=pocket_residues,
+                first_chain=first_chain,
+            )
+        except Exception:
+            return
 
     pdf.add_page()
     pdf.section_header("Structural Insights from 3D Coordinates")

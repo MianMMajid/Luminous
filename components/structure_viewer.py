@@ -83,13 +83,6 @@ def render_structure_viewer():
         unsafe_allow_html=True,
     )
 
-    # Auto-generate interpretation if context is loaded but interpretation isn't
-    if (
-        st.session_state.get("bio_context") is not None
-        and st.session_state.get("interpretation") is None
-    ):
-        _auto_interpret(query, {})
-
     # Guided Tour — quick-focus buttons for key structural regions
     _render_guided_tour(query, prediction, trust_audit)
 
@@ -154,148 +147,166 @@ def render_structure_viewer():
     st.divider()
     _render_auto_analyze(query, prediction)
 
-    # Residue Dashboard — genome-browser-style multi-track strip chart
+    # ── Advanced Analysis & Deep Exploration ──
+    # Collapses secondary tools to reduce cognitive overload on the hero screen.
     st.divider()
-    from components.residue_dashboard import render_residue_dashboard
-
-    structure_analysis = st.session_state.get("structure_analysis") or {}
-    if not structure_analysis and prediction.pdb_content:
-        try:
-            from src.structure_analysis import analyze_structure
-            import re
-            mutation_pos = None
-            if query.mutation:
-                m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
-                if m:
-                    mutation_pos = int(m.group(1))
-            first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
-            structure_analysis = analyze_structure(prediction.pdb_content, mutation_pos=mutation_pos, first_chain=first_chain)
-            st.session_state["structure_analysis"] = structure_analysis
-            st.session_state[f"struct_analysis_{query.protein_name}_{query.mutation}"] = structure_analysis
-        except Exception:
-            pass
-    variant_data = st.session_state.get(f"variant_data_{query.protein_name}")
-    render_residue_dashboard(
-        structure_analysis,
-        prediction.plddt_per_residue or [],
-        query,
-        variant_data,
-    )
-
-    # Tamarind Bio Multi-Tool Analysis
-    st.divider()
-    from components.tamarind_panel import render_tamarind_panel
-
-    render_tamarind_panel(query, prediction)
-
-    # Tamarind Bio Pipeline Builder — smart next steps + multi-tool workflows
-    st.divider()
-    from components.pipeline_builder import render_pipeline_builder
-
-    render_pipeline_builder(query, prediction)
-
-    # Pin pLDDT to Playground
-    if prediction.plddt_per_residue:
-        from components.playground import _build_plddt_chart_json, pin_button
-
-        mean_plddt = sum(prediction.plddt_per_residue) / len(prediction.plddt_per_residue)
-        pin_button(
-            "pLDDT Distribution",
-            f"{len(prediction.plddt_per_residue)} residues, mean pLDDT {mean_plddt:.1f}",
-            "chart",
-            {"plddt": prediction.plddt_per_residue, "residue_ids": prediction.residue_ids},
-            _build_plddt_chart_json(prediction.plddt_per_residue, prediction.residue_ids),
-            key="pin_plddt_dist",
+    with st.expander("Advanced Analysis & Deep Exploration", expanded=False):
+        st.caption(
+            "Residue-level dashboard, Tamarind Bio tools, confidence heatmaps, "
+            "electrostatics, AlphaFold comparison, and data export."
         )
-
-    # Send pLDDT data to Statistics tab
-    if prediction.plddt_per_residue:
-        import pandas as pd
-
-        if st.button("Send to Statistics", key="struct_send_stats",
-                     help="Send pLDDT data to the Statistics tab for analysis"):
-            # Align lists to shortest length to prevent ValueError
-            n = min(
-                len(prediction.residue_ids),
-                len(prediction.chain_ids),
-                len(prediction.plddt_per_residue),
-            )
-            if n > 0:
-                df = pd.DataFrame({
-                    "residue_id": prediction.residue_ids[:n],
-                    "chain": prediction.chain_ids[:n],
-                    "plddt": prediction.plddt_per_residue[:n],
-                })
-                st.session_state["stats_data"] = df
-                st.toast("pLDDT data sent to Statistics tab!")
-
-    # Comprehensive residue annotation export
-    if prediction.plddt_per_residue:
-        n = min(
-            len(prediction.residue_ids),
-            len(prediction.chain_ids) if prediction.chain_ids else len(prediction.residue_ids),
-            len(prediction.plddt_per_residue),
-        )
-        if st.button("Download All Residue Data (CSV)", key="export_residue_csv",
-                     help="Export comprehensive per-residue analysis as CSV"):
-            import io as _io
-
-            data = {"residue_id": prediction.residue_ids[:n]}
-            if prediction.chain_ids:
-                data["chain"] = prediction.chain_ids[:n]
-            if prediction.plddt_per_residue:
-                data["plddt"] = prediction.plddt_per_residue[:n]
-
-            # Add flexibility if computed
-            flex_data = st.session_state.get(f"flexibility_{query.protein_name}")
-            if flex_data and flex_data.get("flexibility") and flex_data.get("residue_ids"):
-                flex_map = dict(zip(flex_data["residue_ids"], flex_data["flexibility"]))
-                data["flexibility"] = [flex_map.get(r, None) for r in data["residue_id"]]
-
-            # Add pocket scores if computed
-            pocket_data = st.session_state.get(f"pockets_{query.protein_name}")
-            if pocket_data and pocket_data.get("residue_pocket_scores"):
-                scores = pocket_data["residue_pocket_scores"]
-                data["pocket_score"] = [scores.get(r, 0.0) for r in data["residue_id"]]
-
-            export_df = pd.DataFrame(data)
-            csv_buffer = _io.StringIO()
-            export_df.to_csv(csv_buffer, index=False)
-            st.download_button(
-                "Save CSV",
-                csv_buffer.getvalue(),
-                f"{query.protein_name}_residue_annotations.csv",
-                mime="text/csv",
-                key="save_residue_csv",
-            )
-
-    # Advanced analysis section
-    with st.expander("Advanced Analysis", expanded=False):
-        adv_tab1, adv_tab2, adv_tab3, adv_tab4 = st.tabs([
-            "Confidence Heatmap", "PAE Domain Map",
-            "Electrostatic Surface", "AlphaFold Comparison",
+        adv_tabs = st.tabs([
+            "Residue Dashboard",
+            "Tamarind Bio",
+            "Confidence & PAE",
+            "Comparison",
+            "Data Export",
         ])
-        with adv_tab1:
-            from components.confidence_heatmap import render_confidence_heatmap
 
-            render_confidence_heatmap(prediction)
-        with adv_tab2:
-            from components.pae_viewer import render_pae_viewer
+        # ── Tab 1: Residue Dashboard ──
+        with adv_tabs[0]:
+            from components.residue_dashboard import render_residue_dashboard
 
-            render_pae_viewer(prediction.confidence_json or {}, query)
-        with adv_tab3:
-            from components.electrostatics_viewer import render_electrostatics_panel
+            structure_analysis = st.session_state.get("structure_analysis") or {}
+            if not structure_analysis and prediction.pdb_content:
+                try:
+                    from src.structure_analysis import analyze_structure
+                    import re
+                    mutation_pos = None
+                    if query.mutation:
+                        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+                        if m:
+                            mutation_pos = int(m.group(1))
+                    first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
+                    structure_analysis = analyze_structure(prediction.pdb_content, mutation_pos=mutation_pos, first_chain=first_chain)
+                    st.session_state["structure_analysis"] = structure_analysis
+                    st.session_state[f"struct_analysis_{query.protein_name}_{query.mutation}"] = structure_analysis
+                except Exception:
+                    pass
+            variant_data = st.session_state.get(f"variant_data_{query.protein_name}")
+            render_residue_dashboard(
+                structure_analysis,
+                prediction.plddt_per_residue or [],
+                query,
+                variant_data,
+            )
 
-            render_electrostatics_panel(prediction.pdb_content, query)
-        with adv_tab4:
-            from components.alphafold_compare import render_alphafold_comparison
+        # ── Tab 2: Tamarind Bio ──
+        with adv_tabs[1]:
+            from components.tamarind_panel import render_tamarind_panel
 
-            render_alphafold_comparison(query, prediction)
+            render_tamarind_panel(query, prediction)
 
-    # Variant Comparison Mode
-    from components.comparison_mode import render_comparison_mode
+            st.divider()
+            from components.pipeline_builder import render_pipeline_builder
 
-    render_comparison_mode(query, prediction, trust_audit)
+            render_pipeline_builder(query, prediction)
+
+        # ── Tab 3: Confidence Heatmap, PAE, Electrostatics ──
+        with adv_tabs[2]:
+            conf_tab1, conf_tab2, conf_tab3, conf_tab4 = st.tabs([
+                "Confidence Heatmap", "PAE Domain Map",
+                "Electrostatic Surface", "AlphaFold Comparison",
+            ])
+            with conf_tab1:
+                from components.confidence_heatmap import render_confidence_heatmap
+
+                render_confidence_heatmap(prediction)
+            with conf_tab2:
+                from components.pae_viewer import render_pae_viewer
+
+                render_pae_viewer(prediction.confidence_json or {}, query)
+            with conf_tab3:
+                from components.electrostatics_viewer import render_electrostatics_panel
+
+                render_electrostatics_panel(prediction.pdb_content, query)
+            with conf_tab4:
+                from components.alphafold_compare import render_alphafold_comparison
+
+                render_alphafold_comparison(query, prediction)
+
+        # ── Tab 4: Variant Comparison ──
+        with adv_tabs[3]:
+            from components.comparison_mode import render_comparison_mode
+
+            render_comparison_mode(query, prediction, trust_audit)
+
+        # ── Tab 5: Data Export ──
+        with adv_tabs[4]:
+            if prediction.plddt_per_residue:
+                from components.playground import _build_plddt_chart_json, pin_button
+
+                mean_plddt = sum(prediction.plddt_per_residue) / len(prediction.plddt_per_residue)
+                pin_button(
+                    "pLDDT Distribution",
+                    f"{len(prediction.plddt_per_residue)} residues, mean pLDDT {mean_plddt:.1f}",
+                    "chart",
+                    {"plddt": prediction.plddt_per_residue, "residue_ids": prediction.residue_ids},
+                    _build_plddt_chart_json(prediction.plddt_per_residue, prediction.residue_ids),
+                    key="pin_plddt_dist",
+                )
+
+            export_col1, export_col2 = st.columns(2)
+            with export_col1:
+                if prediction.plddt_per_residue:
+                    import pandas as pd
+
+                    if st.button("Send to Statistics", key="struct_send_stats",
+                                 help="Send pLDDT data to the Statistics tab for analysis",
+                                 use_container_width=True):
+                        n = min(
+                            len(prediction.residue_ids),
+                            len(prediction.chain_ids),
+                            len(prediction.plddt_per_residue),
+                        )
+                        if n > 0:
+                            df = pd.DataFrame({
+                                "residue_id": prediction.residue_ids[:n],
+                                "chain": prediction.chain_ids[:n],
+                                "plddt": prediction.plddt_per_residue[:n],
+                            })
+                            st.session_state["stats_data"] = df
+                            st.toast("pLDDT data sent to Statistics tab!")
+
+            with export_col2:
+                if prediction.plddt_per_residue:
+                    import pandas as pd
+                    import io as _io
+
+                    n = min(
+                        len(prediction.residue_ids),
+                        len(prediction.chain_ids) if prediction.chain_ids else len(prediction.residue_ids),
+                        len(prediction.plddt_per_residue),
+                    )
+                    if st.button("Download All Residue Data (CSV)", key="export_residue_csv",
+                                 help="Export comprehensive per-residue analysis as CSV",
+                                 use_container_width=True):
+                        data = {"residue_id": prediction.residue_ids[:n]}
+                        if prediction.chain_ids:
+                            data["chain"] = prediction.chain_ids[:n]
+                        if prediction.plddt_per_residue:
+                            data["plddt"] = prediction.plddt_per_residue[:n]
+
+                        flex_data = st.session_state.get(f"flexibility_{query.protein_name}")
+                        if flex_data and flex_data.get("flexibility") and flex_data.get("residue_ids"):
+                            flex_map = dict(zip(flex_data["residue_ids"], flex_data["flexibility"]))
+                            data["flexibility"] = [flex_map.get(r, None) for r in data["residue_id"]]
+
+                        pocket_data = st.session_state.get(f"pockets_{query.protein_name}")
+                        if pocket_data and pocket_data.get("residue_pocket_scores"):
+                            scores = pocket_data["residue_pocket_scores"]
+                            data["pocket_score"] = [scores.get(r, 0.0) for r in data["residue_id"]]
+
+                        export_df = pd.DataFrame(data)
+                        csv_buffer = _io.StringIO()
+                        export_df.to_csv(csv_buffer, index=False)
+                        st.download_button(
+                            "Save CSV",
+                            csv_buffer.getvalue(),
+                            f"{query.protein_name}_residue_annotations.csv",
+                            mime="text/csv",
+                            key="save_residue_csv",
+                        )
 
 
 def _run_prediction(query: ProteinQuery):
@@ -373,7 +384,6 @@ def _run_prediction(query: ProteinQuery):
                         interp_data = precomputed["interpretation"]
                         st.session_state["interpretation"] = interp_data.get("text", "")
 
-                _auto_interpret(query, precomputed)
                 st.caption(f"Loaded Boltz-2 prediction for {query.protein_name}")
                 return
 
@@ -548,38 +558,6 @@ def _run_modal(query: ProteinQuery) -> bool:
             status.update(label="Modal failed — trying next backend", state="error")
             st.warning(f"Modal error: {e}")
             return False
-
-
-def _auto_interpret(query: ProteinQuery, precomputed: dict):
-    """Auto-generate interpretation in background when precomputed data is loaded."""
-    if st.session_state.get("interpretation") is not None:
-        return
-    trust_audit = st.session_state.get("trust_audit")
-    bio_context = st.session_state.get("bio_context")
-    if trust_audit and bio_context:
-        from src.background_tasks import generate_interpretation_background
-        from src.task_manager import task_manager
-
-        # Only submit if not already running
-        interp_status = task_manager.status("interpretation")
-        if interp_status and interp_status.value in ("pending", "running"):
-            return
-
-        task_manager.submit(
-            task_id="interpretation",
-            fn=generate_interpretation_background,
-            kwargs={
-                "protein_name": query.protein_name,
-                "uniprot_id": query.uniprot_id,
-                "mutation": query.mutation,
-                "question_type": query.question_type,
-                "interaction_partner": query.interaction_partner,
-                "sequence": query.sequence,
-                "trust_audit_dict": trust_audit,
-                "bio_context_obj": bio_context,
-            },
-            label="AI interpretation",
-        )
 
 
 def _load_precomputed_context(context_data: dict):
