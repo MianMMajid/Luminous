@@ -10,9 +10,13 @@ from pathlib import Path
 
 
 class SafeJSONEncoder(json.JSONEncoder):
-    """JSON encoder that handles numpy types, Pydantic models, and datetime."""
+    """JSON encoder that handles numpy types, Pydantic models, datetime, and bytes."""
 
     def default(self, obj):
+        import base64
+
+        if isinstance(obj, (bytes, bytearray)):
+            return {"__bytes_b64__": base64.b64encode(obj).decode("ascii")}
         try:
             import numpy as np
             if isinstance(obj, (np.integer,)):
@@ -33,9 +37,22 @@ class SafeJSONEncoder(json.JSONEncoder):
 
 
 def safe_json_dumps(obj, **kwargs) -> str:
-    """JSON dumps with safe handling of numpy/Pydantic/datetime types."""
+    """JSON dumps with safe handling of numpy/Pydantic/datetime/bytes types."""
     kwargs.setdefault("cls", SafeJSONEncoder)
     return json.dumps(obj, **kwargs)
+
+
+def _bytes_object_hook(obj: dict):
+    """Decode ``{"__bytes_b64__": "..."}`` back to bytes on load."""
+    if "__bytes_b64__" in obj and len(obj) == 1:
+        import base64
+        return base64.b64decode(obj["__bytes_b64__"])
+    return obj
+
+
+def safe_json_loads(text: str):
+    """JSON loads that restores base64-encoded bytes produced by safe_json_dumps."""
+    return json.loads(text, object_hook=_bytes_object_hook)
 
 
 def trust_to_color(score: float) -> str:

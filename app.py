@@ -41,6 +41,8 @@ DEFAULTS = {
     "stats_data": None,
     "stats_results": None,
     "stats_survival_data": None,
+    "_chat_thinking": False,
+    "_interpretation_attempted": False,
 }
 for key, val in DEFAULTS.items():
     if key not in st.session_state:
@@ -64,19 +66,27 @@ def reset_results():
         "graphical_abstract_svg", "figure_checklist_state",
         "experiment_tracker", "sketch_image_bytes",
         "sketch_interpretation", "comparison_data",
-        "playground_inspiration", "esmfold_pdb",
+        "playground_inspiration", "playground_pinned",
+        "playground_plan", "esmfold_pdb",
         "docked_complex_pdb", "generated_video",
         "_interpretation_attempted", "_prediction_raw",
     ]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
+    st.session_state["playground_pinned"] = []
+    st.session_state["_chat_thinking"] = False
+    st.session_state["_interpretation_attempted"] = False
     # Clear dynamic caches keyed by protein name or uniprot ID
     _dynamic_prefixes = (
         "variant_data_", "alphamissense_", "domains_",
         "flexibility_", "pockets_", "struct_analysis_",
         "alphafold_", "biorender_results_", "tamarind_results_",
-        "svg_diagram_", "_dashboard_",
+        "svg_diagram_", "svg_", "_dashboard_",
         "_variant_fetch_attempted_", "variant_enrichment_",
+        "pdf_bytes_", "nma_traj_", "morph_traj_",
+        "charge_", "struct_diff_", "electrostatics_data_",
+        "html_report_", "figure_kit_", "cex_",
+        "rcsb_pdb_id_", "biorender_prompt_",
     )
     for k in list(st.session_state.keys()):
         if k.startswith(_dynamic_prefixes):

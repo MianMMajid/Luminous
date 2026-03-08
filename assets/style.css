@@ -1469,14 +1469,16 @@ a:hover, .stMarkdown a:hover {
     color: #ffffff !important;
     border-color: #007AFF !important;
 }
-/* Center pills — force parent container to flex-center the pills widget */
-[data-testid="element-container"]:has(> [data-testid="stPills"]) {
+/* Center pills — multiple strategies for cross-browser reliability */
+[data-testid="element-container"]:has([data-testid="stPills"]) {
     display: flex !important;
     justify-content: center !important;
 }
 [data-testid="stPills"] {
     max-width: 640px !important;
     width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
     text-align: center !important;
     padding: 0 12px !important;
     box-sizing: border-box !important;
