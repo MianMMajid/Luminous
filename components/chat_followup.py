@@ -252,7 +252,7 @@ def _render_welcome_empty():
 
     # Centered suggestions
     if not st.session_state.get("_chat_thinking"):
-        _, pills_col, _ = st.columns([1, 6, 1])
+        _, pills_col, _ = st.columns([2, 6, 1])
         with pills_col:
             _welcome_suggestions = [
                 "Tell me about TP53 and its role in cancer",
