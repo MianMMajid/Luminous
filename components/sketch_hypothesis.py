@@ -423,6 +423,8 @@ def _build_network_figure(elements: list[dict], interactions: list[dict]) -> go.
     import math
 
     n = len(elements)
+    if n == 0:
+        return go.Figure()
     positions = {}
     for i, el in enumerate(elements):
         angle = 2 * math.pi * i / n
@@ -492,6 +494,8 @@ def _elements_to_simple_svg(elements: list[dict], interactions: list[dict]) -> s
     import math
 
     n = len(elements)
+    if n == 0:
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="400"><text x="250" y="200" text-anchor="middle">No elements found</text></svg>'
     cx, cy, r = 250, 200, 150
     positions = {}
     svg_parts = [

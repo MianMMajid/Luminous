@@ -21,7 +21,10 @@ def render_report_export():
         )
         return
 
-    query: ProteinQuery = st.session_state["parsed_query"]
+    query: ProteinQuery | None = st.session_state.get("parsed_query")
+    if query is None:
+        st.warning("No query data. Go to the Query tab first.")
+        return
     prediction: PredictionResult | None = st.session_state.get("prediction_result")
     trust_audit: TrustAudit | None = st.session_state.get("trust_audit")
     bio_context: BioContext | None = st.session_state.get("bio_context")
@@ -43,7 +46,7 @@ def render_report_export():
         cols = st.columns(4)
         cols[0].metric("Confidence", f"{trust_audit.confidence_score:.1%}")
         cols[1].metric("Trust Level", f"{emoji} {trust_audit.overall_confidence.title()}")
-        cols[2].metric("Residues", len(prediction.residue_ids))
+        cols[2].metric("Residues", len(prediction.residue_ids) if prediction else "—")
         if trust_audit.ptm is not None:
             cols[3].metric("pTM", f"{trust_audit.ptm:.3f}")
         elif bio_context:
@@ -663,7 +666,10 @@ def _load_precomputed_biorender(query: ProteinQuery) -> list[dict] | None:
     for key in aliases:
         path = Path("data/precomputed") / key / "biorender.json"
         if path.exists():
-            return json.loads(path.read_text())
+            try:
+                return json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
     return None
 
 
@@ -824,7 +830,8 @@ def _render_biorender_section(query: ProteinQuery):
     for cat, items in categories.items():
         st.markdown(f"**{cat}**")
         for item in items:
-            key = f"chk_{hash(item['item']) % 100000}"
+            import hashlib
+            key = f"chk_{hashlib.md5(item['item'].encode()).hexdigest()[:10]}"
             req_badge = " *(required)*" if item["required"] else ""
             check_state[item["item"]] = st.checkbox(
                 f"{item['item']}{req_badge}",

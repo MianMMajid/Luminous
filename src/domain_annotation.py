@@ -65,6 +65,8 @@ def fetch_domain_annotations(uniprot_id: str) -> dict:
             entry_name = meta.get("name", {})
             if isinstance(entry_name, dict):
                 entry_name = entry_name.get("name", "Unknown")
+            if not entry_name or not isinstance(entry_name, str):
+                entry_name = "Unknown"
             accession = meta.get("accession", "")
             entry_type = meta.get("type", "domain")
             source_db = meta.get("source_database", "InterPro")
@@ -236,7 +238,10 @@ def _build_result(
     # Build residue→domain map
     domain_map: dict[int, str] = {}
     for d in domains:
-        for pos in range(d["start"], d["end"] + 1):
+        d_start, d_end = d["start"], d["end"]
+        if d_end - d_start > 50000:
+            continue  # Skip unreasonably large domains to prevent OOM
+        for pos in range(d_start, d_end + 1):
             domain_map[pos] = d["name"]
 
     # Deduplicate overlapping domains for summary

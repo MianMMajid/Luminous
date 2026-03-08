@@ -48,7 +48,12 @@ def reset_results():
         "prediction_result", "trust_audit", "bio_context",
         "interpretation", "stats_data", "stats_results",
         "stats_survival_data", "structure_analysis",
-        "generated_hypotheses",
+        "generated_hypotheses", "panel_figure_data",
+        "graphical_abstract_svg", "figure_checklist_state",
+        "experiment_tracker", "sketch_image_bytes",
+        "sketch_interpretation", "comparison_data",
+        "playground_inspiration", "esmfold_pdb",
+        "docked_complex_pdb",
     ]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
@@ -57,6 +62,7 @@ def reset_results():
         "variant_data_", "alphamissense_", "domains_",
         "flexibility_", "pockets_", "struct_analysis_",
         "alphafold_", "biorender_results_", "tamarind_results_",
+        "svg_diagram_", "_dashboard_",
     )
     for k in list(st.session_state.keys()):
         if k.startswith(_dynamic_prefixes):
@@ -66,7 +72,9 @@ def reset_results():
 # --- DNA Character SVG (shared between welcome + compact header) ---
 # Stylized double helix with googly eyes — the Pixar lamp of Luminous
 _DNA_SVG_ANIMATED = (
-    '<svg class="dna-char" viewBox="0 0 36 56" xmlns="http://www.w3.org/2000/svg">'
+    '<svg class="dna-char" viewBox="0 0 36 56" width="72" height="107"'
+    ' style="width:72px!important;height:107px!important;min-width:72px;min-height:107px;max-width:none!important;max-height:none!important"'
+    ' xmlns="http://www.w3.org/2000/svg">'
     # ── Shadow ellipse on ground ──
     '<ellipse class="dna-shadow" cx="18" cy="54" rx="8" ry="2"/>'
     # ── Helix body ──
@@ -93,6 +101,10 @@ _DNA_SVG_ANIMATED = (
     '<circle cx="28" cy="42" r="2.2" fill="#34C759"/>'
     '</g>'
     # ── Eyes (on top of helix) ──
+    '<defs>'
+    '<clipPath id="eyeL"><circle cx="12" cy="9" r="5.5"/></clipPath>'
+    '<clipPath id="eyeR"><circle cx="24" cy="9" r="5.5"/></clipPath>'
+    '</defs>'
     # Left eye
     '<circle class="dna-eye-white" cx="12" cy="9" r="5.5"/>'
     '<circle class="dna-pupil" cx="12.8" cy="9.2" r="2.8"/>'
@@ -102,11 +114,11 @@ _DNA_SVG_ANIMATED = (
     # Tiny highlight in each eye for Pixar-style life
     '<circle cx="10.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
     '<circle cx="22.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
-    # Eyelids — thin lines that scale up to cover the eye on blink
-    '<line class="dna-eyelid" x1="6.5" y1="9" x2="17.5" y2="9"'
-    ' stroke-width="11" stroke-linecap="round"/>'
-    '<line class="dna-eyelid dna-eyelid-r" x1="18.5" y1="9" x2="29.5" y2="9"'
-    ' stroke-width="11" stroke-linecap="round"/>'
+    # Eyelids — clipped to eye circles for natural blink
+    '<rect class="dna-eyelid" x="6.5" y="3.5" width="11" height="11"'
+    ' clip-path="url(#eyeL)" fill="#E8E8ED"/>'
+    '<rect class="dna-eyelid dna-eyelid-r" x="18.5" y="3.5" width="11" height="11"'
+    ' clip-path="url(#eyeR)" fill="#E8E8ED"/>'
     '</svg>'
 )
 

@@ -59,12 +59,17 @@ def _predict_p2rank(pdb_content: str) -> dict:
             with open(pred_files[0]) as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    pockets.append({
-                        "rank": int(row.get("rank", 0)),
-                        "score": float(row.get("score", 0)),
-                        "probability": float(row.get("probability", 0)),
-                        "residues": _parse_residue_ids(row.get("residue_ids", "")),
-                    })
+                    try:
+                        # P2Rank CSV headers may have leading whitespace
+                        r = {k.strip(): v for k, v in row.items()}
+                        pockets.append({
+                            "rank": int(r.get("rank") or 0),
+                            "score": float(r.get("score") or 0),
+                            "probability": float(r.get("probability") or 0),
+                            "residues": _parse_residue_ids(r.get("residue_ids", "")),
+                        })
+                    except (ValueError, TypeError):
+                        continue
 
         residue_scores = {}
         if res_files:
@@ -72,10 +77,11 @@ def _predict_p2rank(pdb_content: str) -> dict:
                 reader = csv.DictReader(f)
                 for row in reader:
                     try:
-                        res_id = int(row.get("residue_label", "").strip())
-                        score = float(row.get("score", 0))
+                        r = {k.strip(): v for k, v in row.items()}
+                        res_id = int((r.get("residue_label") or "").strip())
+                        score = float(r.get("score") or 0)
                         residue_scores[res_id] = score
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, AttributeError):
                         pass
 
         top_residues = pockets[0]["residues"] if pockets else []
@@ -99,8 +105,14 @@ def _fallback_pocket_heuristic(pdb_content: str) -> dict:
     import biotite.structure.io.pdb as pdb
     import numpy as np
 
-    pdb_file = pdb.PDBFile.read(io.StringIO(pdb_content))
-    struct_full = pdb_file.get_structure(model=1)
+    if not pdb_content or not pdb_content.strip():
+        return {"pockets": [], "residue_pocket_scores": {}, "top_pocket_residues": [], "method": "heuristic"}
+
+    try:
+        pdb_file = pdb.PDBFile.read(io.StringIO(pdb_content))
+        struct_full = pdb_file.get_structure(model=1)
+    except Exception:
+        return {"pockets": [], "residue_pocket_scores": {}, "top_pocket_residues": [], "method": "heuristic"}
 
     # Filter to first chain protein atoms
     protein = struct_full[struc.filter_amino_acids(struct_full)]

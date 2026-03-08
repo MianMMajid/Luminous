@@ -200,21 +200,35 @@ def load_precomputed(example_name: str) -> dict | None:
     if pdb_file.exists():
         result["pdb"] = pdb_file.read_text()
 
+    def _safe_json(path: Path):
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+
     conf_file = base / "confidence.json"
     if conf_file.exists():
-        result["confidence"] = json.loads(conf_file.read_text())
+        val = _safe_json(conf_file)
+        if val is not None:
+            result["confidence"] = val
 
     context_file = base / "context.json"
     if context_file.exists():
-        result["context"] = json.loads(context_file.read_text())
+        val = _safe_json(context_file)
+        if val is not None:
+            result["context"] = val
 
     affinity_file = base / "affinity.json"
     if affinity_file.exists():
-        result["affinity"] = json.loads(affinity_file.read_text())
+        val = _safe_json(affinity_file)
+        if val is not None:
+            result["affinity"] = val
 
     variants_file = base / "variants.json"
     if variants_file.exists():
-        result["variants"] = fix_variant_dict_keys(json.loads(variants_file.read_text()))
+        val = _safe_json(variants_file)
+        if val is not None:
+            result["variants"] = fix_variant_dict_keys(val)
 
     # Extended precomputed data (structure analysis, flexibility, pockets, interpretation)
     for key, filename in [
@@ -225,11 +239,22 @@ def load_precomputed(example_name: str) -> dict | None:
     ]:
         fpath = base / filename
         if fpath.exists():
-            result[key] = json.loads(fpath.read_text())
+            val = _safe_json(fpath)
+            if val is not None:
+                result[key] = val
 
     # Fix JSON key types: per-residue dicts need int keys (JSON only has string keys)
     if "structure_analysis" in result:
         result["structure_analysis"] = _fix_residue_dict_keys(result["structure_analysis"])
+
+    # Fix pocket score keys (JSON serializes int keys as strings)
+    if "pockets" in result and isinstance(result["pockets"], dict):
+        rps = result["pockets"].get("residue_pocket_scores")
+        if rps and isinstance(rps, dict):
+            result["pockets"]["residue_pocket_scores"] = {
+                int(k) if isinstance(k, str) and k.isdigit() else k: v
+                for k, v in rps.items()
+            }
 
     return result if result else None
 

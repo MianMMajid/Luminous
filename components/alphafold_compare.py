@@ -71,8 +71,8 @@ def _render_comparison_chart(prediction: PredictionResult, af_data: dict):
     """Overlay Boltz-2 and AlphaFold pLDDT profiles."""
     boltz_res = prediction.residue_ids
     boltz_plddt = prediction.plddt_per_residue
-    af_res = af_data["residue_ids"]
-    af_plddt = af_data["plddt_scores"]
+    af_res = af_data.get("residue_ids", [])
+    af_plddt = af_data.get("plddt_scores", [])
 
     fig = go.Figure()
 

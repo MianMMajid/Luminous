@@ -46,7 +46,7 @@ def render_hypothesis_panel(
             if bio_context and (bio_context.disease_associations or bio_context.drugs):
                 data_sources.append("Biological context")
             if variant_data and variant_data.get("variants"):
-                data_sources.append(f"Variant landscape ({variant_data['total']} variants)")
+                data_sources.append(f"Variant landscape ({variant_data.get('total', '?')} variants)")
 
             st.info(
                 "Click **Generate Hypotheses** to have Claude analyze your data and suggest "

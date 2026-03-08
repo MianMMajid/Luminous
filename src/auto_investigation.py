@@ -58,11 +58,17 @@ def auto_investigate(
     # Phase 7: Flexibility analysis
     flexibility_data = _run_flexibility_analysis(pdb_content, chain, result)
 
-    # Phase 8: Cross-reference and annotate
+    # Phase 8: Protein Structure Network
+    psn_data = _run_psn_analysis(pdb_content, chain, result)
+
+    # Phase 9: Residue depth
+    depth_data = _run_depth_analysis(pdb_content, chain, result)
+
+    # Phase 10: Cross-reference and annotate
     _cross_reference(
         result, structure_data, surface_data, pocket_data,
         ptm_data, disorder_data, conservation_data, flexibility_data,
-        mutation, plddt_scores,
+        mutation, plddt_scores, psn_data, depth_data,
     )
 
     # Phase 9: Generate summary
@@ -390,11 +396,69 @@ def _run_flexibility_analysis(pdb_content: str, chain: str | None, result: Inves
         return {"error": str(e)}
 
 
+def _run_psn_analysis(pdb_content: str, chain: str | None, result: InvestigationResult) -> dict:
+    try:
+        from src.protein_network import build_protein_network
+        data = build_protein_network(pdb_content, chain)
+        result.analyses_run.append("protein_network")
+
+        summary = data.get("summary", {})
+        n_communities = summary.get("n_communities", 0)
+        n_bridges = summary.get("n_bridges", 0)
+
+        if n_communities > 1:
+            result.findings.append({
+                "type": "network",
+                "title": "Structural Communities",
+                "detail": f"{n_communities} structural communities detected — "
+                          "functional modules that may differ from sequence domains",
+                "priority": 2,
+            })
+
+        if n_bridges > 0:
+            bridges = data.get("bridge_residues", [])[:3]
+            pos_str = ", ".join(str(b["residue"]) for b in bridges)
+            result.findings.append({
+                "type": "network",
+                "title": "Communication Bottlenecks",
+                "detail": f"{n_bridges} bridge residue(s) (e.g., {pos_str}) — "
+                          "allosteric communication bottlenecks",
+                "priority": 1,
+            })
+
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _run_depth_analysis(pdb_content: str, chain: str | None, result: InvestigationResult) -> dict:
+    try:
+        from src.residue_depth import compute_residue_depth
+        data = compute_residue_depth(pdb_content, chain)
+        result.analyses_run.append("residue_depth")
+
+        summary = data.get("summary", {})
+        n_deep = summary.get("n_deep_core", 0)
+        if n_deep > 0:
+            result.findings.append({
+                "type": "depth",
+                "title": "Deep Core Residues",
+                "detail": f"{n_deep} residues in deep core (>8 Å from surface) — "
+                          "mutations here are most destabilizing",
+                "priority": 3,
+            })
+
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def _cross_reference(
     result: InvestigationResult,
     structure: dict, surface: dict, pockets: dict,
     ptms: dict, disorder: dict, conservation: dict, flexibility: dict,
     mutation: str | None, plddt: list[float] | None,
+    psn: dict | None = None, depth: dict | None = None,
 ) -> None:
     """Cross-reference results across analyses to find compound insights."""
     import re
@@ -477,6 +541,69 @@ def _cross_reference(
                       "suggests functionally important conformational dynamics",
             "priority": 1,
         })
+
+    # Cross-ref 7: Mutation at bridge residue (allosteric bottleneck)
+    if mutation_pos and psn:
+        bridge_set = {b["residue"] for b in psn.get("bridge_residues", [])}
+        if mutation_pos in bridge_set:
+            result.risk_flags.append({
+                "type": "mutation_at_bridge",
+                "residue": mutation_pos,
+                "severity": "critical",
+                "message": f"Mutation {mutation} at communication bottleneck — may disrupt allosteric signaling",
+            })
+
+    # Cross-ref 8: Deep core mutation (high destabilization risk)
+    if mutation_pos and depth:
+        depth_val = depth.get("depth", {}).get(mutation_pos, 0)
+        if depth_val > 8.0:
+            result.risk_flags.append({
+                "type": "deep_mutation",
+                "residue": mutation_pos,
+                "severity": "high",
+                "message": f"Mutation {mutation} at depth {depth_val:.1f} Å (deep core) — high destabilization risk",
+            })
+
+    # Cross-ref 9: Conserved + disordered = functional IDR
+    conserved = set(conservation.get("highly_conserved", []))
+    disordered_set = set(
+        r for r, is_dis in disorder.get("is_disordered", {}).items() if is_dis
+    )
+    conserved_disordered = conserved & disordered_set
+    if len(conserved_disordered) >= 3:
+        result.findings.append({
+            "type": "functional_idr",
+            "title": "Conserved Disordered Regions",
+            "detail": f"{len(conserved_disordered)} residues are both conserved AND disordered — "
+                      "likely functional intrinsically disordered regions (e.g., transactivation domains)",
+            "priority": 1,
+        })
+
+    # Cross-ref 10: PTM at conserved site = functionally critical modification
+    ptm_residues = set(ptms.get("ptm_per_residue", {}).keys())
+    conserved_ptm = ptm_residues & conserved
+    if conserved_ptm:
+        result.annotations.append({
+            "type": "conserved_ptm",
+            "residues": sorted(conserved_ptm),
+            "message": f"{len(conserved_ptm)} PTM site(s) at highly conserved positions — "
+                       "likely functionally critical modifications",
+            "severity": "high",
+        })
+
+    # Cross-ref 11: Hub residue + pocket = druggable allosteric site
+    if psn:
+        hub_set = {h["residue"] for h in psn.get("hub_residues", [])}
+        pocket_residues = set(pockets.get("top_pocket_residues", []))
+        hub_pocket = hub_set & pocket_residues
+        if hub_pocket:
+            result.annotations.append({
+                "type": "allosteric_pocket",
+                "residues": sorted(hub_pocket),
+                "message": f"Binding pocket overlaps with {len(hub_pocket)} network hub(s) — "
+                           "potential allosteric druggable site",
+                "severity": "high",
+            })
 
     # Generate recommendations
     _generate_recommendations(result, mutation, mutation_pos, structure, pockets)

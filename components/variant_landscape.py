@@ -15,10 +15,23 @@ from src.models import PredictionResult, ProteinQuery
 def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
     """Render the variant pathogenicity landscape panel."""
     st.markdown("#### Variant Pathogenicity Landscape")
-    st.caption(
-        "Known pathogenic variants from ClinVar/OncoKB mapped onto the structure. "
-        "Connects AI structure prediction to clinical variant interpretation."
-    )
+    # Query-aware caption explaining WHY variants matter for this question
+    if query.question_type == "druggability" and query.mutation:
+        caption = (
+            f"Known pathogenic variants near **{query.mutation}** — resistance mutations "
+            "at drug-binding positions can alter therapeutic response."
+        )
+    elif query.mutation:
+        caption = (
+            f"How does **{query.mutation}** compare to other known pathogenic variants? "
+            "ClinVar/OncoKB data mapped onto the predicted structure."
+        )
+    else:
+        caption = (
+            "Known pathogenic variants from ClinVar/OncoKB mapped onto the structure. "
+            "Connects AI structure prediction to clinical variant interpretation."
+        )
+    st.caption(caption)
 
     cache_key = f"variant_data_{query.protein_name}"
     variant_data = st.session_state.get(cache_key)
@@ -37,7 +50,7 @@ def render_variant_landscape(query: ProteinQuery, prediction: PredictionResult):
             )
             return
 
-    if not variant_data.get("variants"):
+    if not isinstance(variant_data, dict) or not variant_data.get("variants"):
         st.info(variant_data.get("summary", "No variant data found."))
         return
 

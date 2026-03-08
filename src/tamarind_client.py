@@ -157,6 +157,11 @@ async def poll_job(job_name: str, timeout: int = 300) -> dict:
             headers=_headers(),
             params={"jobName": job_name},
         )
+        # Tolerate transient 5xx during polling — retry instead of crashing
+        if resp.status_code >= 500:
+            await asyncio.sleep(interval)
+            interval = min(interval + 2.0, 10.0)
+            continue
         resp.raise_for_status()
         data = resp.json()
 
@@ -239,7 +244,11 @@ async def _download_result_url(client: httpx.AsyncClient, url: str, job_name: st
 
     # JSON response
     if "json" in ct:
-        return resp.json() if isinstance(resp.json(), dict) else {"raw": resp.json()}
+        try:
+            parsed = resp.json()
+            return parsed if isinstance(parsed, dict) else {"raw": parsed}
+        except Exception:
+            return {"raw": resp.text}
 
     # ZIP file — extract PDB and JSON files
     if "zip" in ct or "octet-stream" in ct or url.endswith(".zip"):

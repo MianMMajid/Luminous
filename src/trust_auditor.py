@@ -15,7 +15,10 @@ LIMITATIONS_PATH = Path("data/known_limitations.json")
 
 def _load_limitations() -> dict:
     if LIMITATIONS_PATH.exists():
-        return json.loads(LIMITATIONS_PATH.read_text())
+        try:
+            return json.loads(LIMITATIONS_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
     return {}
 
 
