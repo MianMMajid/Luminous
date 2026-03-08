@@ -257,11 +257,14 @@ div[role="tablist"] {
 .stTabs [data-baseweb="tab-border"] {
     display: none !important;
 }
-/* (padding-bottom for floating bar is in the main .block-container rule above) */
 /* Push Streamlit's chat input above the category bar */
 [data-testid="stBottom"],
 div[data-testid="stBottom"] {
     bottom: 60px !important;
+}
+/* Enough bottom padding so content never hides behind the fixed chat input */
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] {
+    padding-bottom: 120px !important;
 }
 
 /* --- Buttons (Glassy Black Rounded) --- */
@@ -842,19 +845,14 @@ a:hover, .stMarkdown a:hover {
        repeated here for the Judge UI section's own scope */
 }
 
-/* ── Welcome Page — fills viewport, hero above center ── */
+/* ── Welcome Page — compact, no viewport fill ── */
 .lumi-welcome-page {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    /* Fill available space between header and fixed chat input + tab bar */
-    min-height: calc(100vh - 200px);
-    min-height: calc(100dvh - 200px);
     width: 100%;
     overflow: visible;
-    /* Offset upward so hero feels "above center" */
-    padding-bottom: 80px;
+    padding: 24px 0 16px;
     box-sizing: border-box;
 }
 /* ── Welcome State (hero section inside page) ── */
@@ -862,8 +860,7 @@ a:hover, .stMarkdown a:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
+    gap: 12px;
     padding: 0 24px 0;
     animation: lumiWelcomeFadeIn 0.5s var(--lumi-ease-spring) both;
     overflow: visible;
@@ -1938,7 +1935,7 @@ a:hover, .stMarkdown a:hover {
 }
 
 @media (max-width: 768px) {
-    .lumi-welcome-page { min-height: calc(100vh - 180px); min-height: calc(100dvh - 180px); padding-bottom: 48px; }
+    .lumi-welcome-page { padding: 16px 0 8px; }
     .lumi-welcome { padding: 0 16px 0; }
     .lumi-title { font-size: 72px !important; letter-spacing: -2px; padding-top: 48px; margin-top: -16px; }
     .lumi-i-wrapper { width: 38px; font-size: 72px !important; }
