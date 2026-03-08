@@ -30,6 +30,9 @@ pharmacology, and literature.
 - predict_disorder: Intrinsic disorder prediction from sequence + structure
 - compare_structures: Predicted vs experimental RMSD, GDT-TS, TM-score
 - auto_investigate: Comprehensive auto-analysis — runs ALL tools and cross-references results
+- build_protein_network: Graph-theoretic PSN — allosteric hubs, communities, bridge residues
+- find_communication_path: Shortest structural path between two residues (mutation propagation)
+- compute_residue_depth: Continuous burial gradient (more informative than binary SASA)
 - generate_hypotheses: Synthesize data into testable claims
 
 **Online databases** (live queries, no structure needed):
@@ -471,6 +474,56 @@ def _make_tools() -> list[dict]:
             ),
             "input_schema": {"type": "object", "properties": {}, "required": []},
         },
+        {
+            "name": "build_protein_network",
+            "description": (
+                "Build a Protein Structure Network (PSN) and compute graph metrics. "
+                "Reveals allosteric hotspots via betweenness centrality, functional modules "
+                "via community detection, and bridge residues (bottleneck communication nodes). "
+                "These graph-theoretic insights are invisible in static structure views."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "contact_cutoff": {
+                        "type": "number",
+                        "description": "Cα distance cutoff for contacts (default 8.0 Å)",
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "find_communication_path",
+            "description": (
+                "Find the shortest structural communication path between two residues "
+                "in the protein structure network. Shows how a mutation at one site "
+                "propagates through the contact network to affect a distant functional site."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "source_residue": {
+                        "type": "integer",
+                        "description": "Starting residue number (e.g., mutation site)",
+                    },
+                    "target_residue": {
+                        "type": "integer",
+                        "description": "Target residue number (e.g., active site residue)",
+                    },
+                },
+                "required": ["source_residue", "target_residue"],
+            },
+        },
+        {
+            "name": "compute_residue_depth",
+            "description": (
+                "Compute per-residue depth (distance to nearest surface atom). "
+                "More informative than binary SASA — reveals continuous burial gradient. "
+                "Deep residues are most sensitive to mutations and most conserved."
+            ),
+            "input_schema": {"type": "object", "properties": {}, "required": []},
+        },
         # ── BioRender illustration tools ──────────────────────────────
         {
             "name": "search_biorender_templates",
@@ -609,6 +662,13 @@ def execute_tool(tool_name: str, tool_input: dict, session_context: dict) -> str
             return _exec_compare_structures(tool_input, session_context)
         elif tool_name == "auto_investigate":
             return _exec_auto_investigate(session_context)
+        # PSN and depth tools
+        elif tool_name == "build_protein_network":
+            return _exec_protein_network(session_context, tool_input)
+        elif tool_name == "find_communication_path":
+            return _exec_communication_path(session_context, tool_input)
+        elif tool_name == "compute_residue_depth":
+            return _exec_residue_depth(session_context)
         # BioRender illustration tools
         elif tool_name == "search_biorender_templates":
             return _exec_biorender_templates(tool_input)
@@ -948,6 +1008,49 @@ def _exec_auto_investigate(ctx: dict) -> str:
         "annotations": result.annotations[:10],
         "recommendations": result.recommendations,
         "analyses_run": result.analyses_run,
+    })
+
+
+def _exec_protein_network(ctx: dict, tool_input: dict) -> str:
+    pdb = ctx.get("pdb_content", "")
+    if not pdb:
+        return json.dumps({"error": "No PDB loaded"})
+    from src.protein_network import build_protein_network
+    cutoff = tool_input.get("contact_cutoff", 8.0)
+    data = build_protein_network(pdb, contact_cutoff=cutoff)
+    # Trim for conciseness
+    return safe_json_dumps({
+        "graph_stats": data.get("graph_stats"),
+        "communities": data.get("communities", [])[:10],
+        "hub_residues": data.get("hub_residues", [])[:10],
+        "bridge_residues": data.get("bridge_residues", [])[:10],
+        "summary": data.get("summary"),
+    })
+
+
+def _exec_communication_path(ctx: dict, tool_input: dict) -> str:
+    pdb = ctx.get("pdb_content", "")
+    if not pdb:
+        return json.dumps({"error": "No PDB loaded"})
+    from src.protein_network import find_communication_path
+    source = tool_input.get("source_residue")
+    target = tool_input.get("target_residue")
+    if source is None or target is None:
+        return json.dumps({"error": "source_residue and target_residue required"})
+    return safe_json_dumps(find_communication_path(pdb, source, target))
+
+
+def _exec_residue_depth(ctx: dict) -> str:
+    pdb = ctx.get("pdb_content", "")
+    if not pdb:
+        return json.dumps({"error": "No PDB loaded"})
+    from src.residue_depth import compute_residue_depth
+    data = compute_residue_depth(pdb)
+    return safe_json_dumps({
+        "summary": data.get("summary"),
+        "deep_core": data.get("deep_core", [])[:20],
+        "intermediate_count": len(data.get("intermediate", [])),
+        "surface_count": len(data.get("surface", [])),
     })
 
 

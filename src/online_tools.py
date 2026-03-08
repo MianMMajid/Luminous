@@ -251,9 +251,9 @@ def get_protein_info(query: str) -> dict:
         for feat in data.get("features", []):
             ftype = feat.get("type", "")
             desc = feat.get("description", "")
-            loc = feat.get("location", {})
-            start = loc.get("start", {}).get("value", "?")
-            end = loc.get("end", {}).get("value", "?")
+            loc = feat.get("location") or {}
+            start = (loc.get("start") or {}).get("value", "?")
+            end = (loc.get("end") or {}).get("value", "?")
             entry = f"{desc} ({start}-{end})" if desc else f"{ftype} ({start}-{end})"
 
             if ftype == "Domain":
@@ -574,7 +574,7 @@ def get_interaction_network(protein: str, species: int = 9606, limit: int = 15) 
         if not resolve or (isinstance(resolve, list) and len(resolve) == 0):
             return {"error": f"Protein '{protein}' not found in STRING DB (species: {species})"}
 
-        string_id = resolve[0]["stringId"] if isinstance(resolve, list) else resolve.get("stringId", "")
+        string_id = resolve[0].get("stringId", "") if isinstance(resolve, list) else resolve.get("stringId", "")
 
         # Get interaction partners
         interactions = _get(
@@ -738,7 +738,8 @@ def lookup_compound(name: str) -> dict:
         if not compounds:
             return {"error": f"No PubChem results for '{name}'"}
 
-        cid = compounds[0].get("id", {}).get("id", {}).get("cid")
+        cid = (compounds[0].get("id") or {}).get("id") or {}
+        cid = cid.get("cid") if isinstance(cid, dict) else cid
         if not cid:
             return {"error": "Could not extract PubChem CID"}
 

@@ -98,7 +98,9 @@ def _render_welcome_empty():
     """Show welcome state when no query is parsed — DNA Pixar animation + chat intro."""
     # DNA character SVG (animated version for this welcome screen)
     _dna_svg = (
-        '<svg class="dna-char" viewBox="0 0 36 56" xmlns="http://www.w3.org/2000/svg">'
+        '<svg class="dna-char" viewBox="0 0 36 56" width="72" height="107"'
+        ' style="width:72px!important;height:107px!important;min-width:72px;min-height:107px;max-width:none!important;max-height:none!important"'
+        ' xmlns="http://www.w3.org/2000/svg">'
         '<ellipse class="dna-shadow" cx="18" cy="54" rx="8" ry="2"/>'
         '<g class="dna-body-group">'
         '<line class="dna-rung" x1="8" y1="18" x2="28" y2="18"/>'
@@ -118,16 +120,20 @@ def _render_welcome_empty():
         '<circle cx="8" cy="42" r="2.2" fill="#007AFF"/>'
         '<circle cx="28" cy="42" r="2.2" fill="#34C759"/>'
         '</g>'
+        '<defs>'
+        '<clipPath id="eyeL"><circle cx="12" cy="9" r="5.5"/></clipPath>'
+        '<clipPath id="eyeR"><circle cx="24" cy="9" r="5.5"/></clipPath>'
+        '</defs>'
         '<circle class="dna-eye-white" cx="12" cy="9" r="5.5"/>'
         '<circle class="dna-pupil" cx="12.8" cy="9.2" r="2.8"/>'
         '<circle class="dna-eye-white" cx="24" cy="9" r="5.5"/>'
         '<circle class="dna-pupil" cx="24.8" cy="9.2" r="2.8"/>'
         '<circle cx="10.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
         '<circle cx="22.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
-        '<line class="dna-eyelid" x1="6.5" y1="9" x2="17.5" y2="9"'
-        ' stroke-width="11" stroke-linecap="round"/>'
-        '<line class="dna-eyelid dna-eyelid-r" x1="18.5" y1="9" x2="29.5" y2="9"'
-        ' stroke-width="11" stroke-linecap="round"/>'
+        '<rect class="dna-eyelid" x="6.5" y="3.5" width="11" height="11"'
+        ' clip-path="url(#eyeL)" fill="#E8E8ED"/>'
+        '<rect class="dna-eyelid dna-eyelid-r" x="18.5" y="3.5" width="11" height="11"'
+        ' clip-path="url(#eyeR)" fill="#E8E8ED"/>'
         '</svg>'
     )
 
@@ -183,6 +189,7 @@ def _render_chat_bubbles(messages: list[dict]):
             bubble_parts.append(
                 f'<div class="lumi-bubble user">{content}</div>'
             )
+            bubble_parts.append('<div class="lumi-delivered">Delivered</div>')
         elif role == "assistant":
             # Allow markdown rendering in assistant bubbles
             content = msg.get("content", "")
@@ -231,7 +238,8 @@ def _render_tool_badges():
         "compute_flexibility", "generate_hypotheses", "search_variants",
         "fetch_bio_context", "compute_surface_properties", "predict_ptm_sites",
         "compute_conservation", "predict_disorder", "compare_structures",
-        "auto_investigate",
+        "auto_investigate", "build_protein_network", "find_communication_path",
+        "compute_residue_depth",
     }
     biorender_tools = {
         "search_biorender_templates", "search_biorender_icons",
@@ -500,7 +508,7 @@ def _generate_response(
                         if msg["role"] in ("user", "assistant")
                     ],
                 )
-                assistant_text = response.content[0].text
+                assistant_text = response.content[0].text if response.content else "No response generated."
             except Exception as e2:
                 err2 = str(e2)
                 if "credit balance" in err2.lower() or "billing" in err2.lower():

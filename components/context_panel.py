@@ -73,16 +73,31 @@ def render_context_panel():
         unsafe_allow_html=True,
     )
 
+    # Query-aware context summary — connect data to the scientist's question
+    _CONTEXT_FOCUS = {
+        "structure": "Showing biological context for structural interpretation.",
+        "mutation_impact": "Focusing on disease associations and clinical significance of this mutation.",
+        "druggability": "Focusing on drug candidates, binding mechanisms, and therapeutic context.",
+        "binding": "Focusing on interaction partners, binding pathways, and interface biology.",
+    }
+    focus_msg = _CONTEXT_FOCUS.get(query.question_type, "")
+    if focus_msg:
+        st.caption(focus_msg)
+
     # Two-column layout for structured data
     left, right = st.columns(2)
 
     with left:
-        # Disease Associations
+        # Disease Associations — prioritize by query type
         if bio_context.disease_associations:
+            diseases = bio_context.disease_associations
+            # For druggability: only show high-confidence drug-actionable diseases
+            if query.question_type == "druggability":
+                diseases = [d for d in diseases if d.score is None or d.score > 0.4]
             with st.expander(
-                f"Disease Associations ({len(bio_context.disease_associations)})",
+                f"Disease Associations ({len(diseases)})",
             ):
-                for da in bio_context.disease_associations:
+                for da in diseases:
                     score_pct = f"{da.score:.0%}" if da.score is not None else ""
                     score_color = (
                         "#FF3B30" if da.score and da.score > 0.7

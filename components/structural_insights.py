@@ -29,11 +29,21 @@ def render_structural_insights(
         return
 
     st.markdown("### Structural Insights from 3D Coordinates")
-    st.caption(
+    _INSIGHT_CAPTIONS = {
+        "structure": "How the protein folds — buried vs. exposed residues, "
+                     "secondary structure, and backbone geometry.",
+        "mutation_impact": f"Structural context for **{query.mutation or 'this mutation'}** — "
+                           "burial, packing, 3D proximity to other pathogenic variants.",
+        "druggability": "Binding pocket accessibility, surface exposure, and "
+                        "structural features relevant to drug design.",
+        "binding": "Interface properties — surface exposure, packing density, "
+                   "and contact networks at the binding interface.",
+    }
+    st.caption(_INSIGHT_CAPTIONS.get(
+        query.question_type,
         "Properties computed directly from atomic coordinates — "
-        "revealing buried vs. exposed residues, 3D spatial clustering, "
-        "and structural context that sequence data alone cannot show."
-    )
+        "revealing buried vs. exposed residues and structural context.",
+    ))
 
     # Get variant and pocket data
     variant_data = st.session_state.get(f"variant_data_{query.protein_name}")

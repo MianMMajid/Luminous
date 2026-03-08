@@ -96,27 +96,34 @@ def render_structure_viewer():
         bio_context = st.session_state.get("bio_context")
         render_mutation_impact(query, prediction, trust_audit, bio_context)
 
-    # Variant Pathogenicity Landscape
-    from components.variant_landscape import render_variant_landscape
+    # ── Query-aware panel rendering ──
+    # Only show panels relevant to the scientist's actual question
+    qtype = query.question_type
 
-    render_variant_landscape(query, prediction)
+    # Variant Pathogenicity Landscape — mutation/druggability context
+    if qtype in ("mutation_impact", "druggability") or query.mutation:
+        from components.variant_landscape import render_variant_landscape
 
-    # Drug Resistance Mechanism Viewer
-    from components.drug_resistance import render_drug_resistance
+        render_variant_landscape(query, prediction)
 
-    render_drug_resistance(
-        query, prediction, st.session_state.get("bio_context")
-    )
+    # Drug Resistance Mechanism Viewer — needs both drug context AND a mutation
+    if qtype in ("druggability", "mutation_impact") and query.mutation:
+        from components.drug_resistance import render_drug_resistance
 
-    # Structural Insights (SASA, 3D distances, secondary structure)
+        render_drug_resistance(
+            query, prediction, st.session_state.get("bio_context")
+        )
+
+    # Structural Insights — always relevant but adapts internally
     from components.structural_insights import render_structural_insights
 
     render_structural_insights(query, prediction)
 
-    # Disorder Region Detector
-    from components.disorder_detector import render_disorder_detection
+    # Disorder Region Detector — structure/binding/mutation context
+    if qtype != "druggability":
+        from components.disorder_detector import render_disorder_detection
 
-    render_disorder_detection(query, prediction, trust_audit)
+        render_disorder_detection(query, prediction, trust_audit)
 
     # Auto-Analyze — one-click recommended analyses
     st.divider()
@@ -201,7 +208,7 @@ def render_structure_viewer():
 
             # Add flexibility if computed
             flex_data = st.session_state.get(f"flexibility_{query.protein_name}")
-            if flex_data and flex_data.get("flexibility"):
+            if flex_data and flex_data.get("flexibility") and flex_data.get("residue_ids"):
                 flex_map = dict(zip(flex_data["residue_ids"], flex_data["flexibility"]))
                 data["flexibility"] = [flex_map.get(r, None) for r in data["residue_id"]]
 
@@ -1120,8 +1127,8 @@ def _render_charge_surface(
         st.info("Not enough residues for charge analysis.")
         return
 
-    charge_map = charge_data["charge"]
-    res_ids = charge_data["residue_ids"]
+    charge_map = charge_data.get("charge", {})
+    res_ids = charge_data.get("residue_ids", [])
 
     # Build color annotations: blue = positive, red = negative, white = neutral
     annotations = []
@@ -1323,7 +1330,7 @@ def _render_structure_diff(
         st.warning(f"Comparison error: {diff_result['error']}")
         return
 
-    per_res_rmsd = diff_result["per_residue_rmsd"]
+    per_res_rmsd = diff_result.get("per_residue_rmsd", {})
 
     # Build color annotations by RMSD thresholds
     annotations = []
@@ -1372,9 +1379,9 @@ def _render_structure_diff(
 
     # Key metrics
     mcol1, mcol2, mcol3 = st.columns(3)
-    mcol1.metric("Global RMSD", f"{diff_result['global_rmsd']:.2f} A")
-    mcol2.metric("GDT-TS", f"{diff_result['gdt_ts']:.3f}")
-    mcol3.metric("TM-score", f"{diff_result['tm_score']:.3f}")
+    mcol1.metric("Global RMSD", f"{diff_result.get('global_rmsd', 0):.2f} A")
+    mcol2.metric("GDT-TS", f"{diff_result.get('gdt_ts', 0):.3f}")
+    mcol3.metric("TM-score", f"{diff_result.get('tm_score', 0):.3f}")
 
     # Strip chart of per-residue RMSD
     import plotly.graph_objects as go
@@ -1442,7 +1449,7 @@ def _render_structure_diff(
         st.caption(
             f"Poor stretches (>5 A RMSD): "
             + ", ".join(
-                f"{s[0]}-{s[-1]}" if len(s) > 1 else str(s[0])
+                (f"{s[0]}-{s[-1]}" if len(s) > 1 else str(s[0])) if s else "?"
                 for s in poor_stretches[:8]
             )
         )

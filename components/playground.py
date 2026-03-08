@@ -340,6 +340,9 @@ def _render_insight_card(item: dict, display_key: int, *, actual_idx: int | None
 
 def _render_data_preview(data: dict, idx: int):
     """Render a compact preview of structured data."""
+    if not data:
+        st.caption("No data to preview.")
+        return
     preview_cols = st.columns(min(len(data), 3))
     for i, (key, value) in enumerate(list(data.items())[:3]):
         with preview_cols[i]:

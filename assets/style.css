@@ -368,10 +368,11 @@ details[data-testid="stExpander"][open] {
     transition: all 0.2s ease;
 }
 
-/* --- Chat Styling --- */
+/* --- Chat Styling (Streamlit native chat messages) --- */
 .stChatMessage {
-    border-radius: 14px;
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.01);
 }
 
 /* --- Progress Bar --- */
@@ -713,7 +714,25 @@ h4 {
 /* Selectbox, multiselect borders */
 [data-baseweb="select"] > div {
     border-color: rgba(0, 0, 0, 0.1) !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
+}
+/* Text input, text area */
+.stTextInput input,
+.stTextArea textarea {
+    border-radius: 12px !important;
+}
+/* Number input */
+.stNumberInput input {
+    border-radius: 12px !important;
+}
+/* File uploader */
+[data-testid="stFileUploader"] > div {
+    border-radius: 12px !important;
+}
+/* Data editor */
+[data-testid="stDataEditor"] {
+    border-radius: 12px !important;
+    overflow: hidden;
 }
 
 /* Checkbox accent */
@@ -853,7 +872,11 @@ a:hover, .stMarkdown a:hover {
     transform-origin: bottom center;
     animation: lumiLetterSquash 3.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     position: relative;
-    width: 0.52em;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    font-family: inherit !important;
+    line-height: inherit !important;
+    width: 77px;
     text-align: center;
 }
 
@@ -863,10 +886,13 @@ a:hover, .stMarkdown a:hover {
     left: 50%;
     bottom: 0;
     transform: translateX(-50%);
-    width: 90px;
-    height: 120px;
+    width: 90px !important;
+    height: 120px !important;
+    min-width: 90px;
+    min-height: 120px;
     pointer-events: none;
     z-index: 2;
+    overflow: visible !important;
 }
 /* Wrapper to position slot precisely over the "i" */
 .lumi-i-wrapper {
@@ -883,8 +909,12 @@ a:hover, .stMarkdown a:hover {
     position: absolute;
     bottom: 2px;
     left: 50%;
-    width: 72px;
-    height: 107px;
+    width: 72px !important;
+    height: 107px !important;
+    min-width: 72px !important;
+    min-height: 107px !important;
+    max-width: none !important;
+    max-height: none !important;
     transform-origin: bottom center;
     animation: dnaHopIn 3.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.14));
@@ -903,10 +933,9 @@ a:hover, .stMarkdown a:hover {
                dnaIdleLook 4s 3.5s ease-in-out infinite;
 }
 .dna-eyelid {
-    stroke: #ffffff;
-    fill: none;
-    transform-origin: center;
-    opacity: 0;
+    fill: #E8E8ED;
+    transform-origin: center 9px;
+    transform: scaleY(0);
     animation: dnaBlinkSequence 3.0s ease forwards,
                dnaIdleBlink 4s 3.5s ease-in-out infinite;
 }
@@ -1025,12 +1054,12 @@ a:hover, .stMarkdown a:hover {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-/* ── Chat Bubbles (iMessage style, Apple palette) ── */
+/* ── Chat Bubbles (iMessage style) ── */
 .lumi-chat-container {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 16px 0;
+    gap: 2px;
+    padding: 16px 12px;
     max-height: 60vh;
     overflow-y: auto;
     overflow-x: hidden;
@@ -1046,53 +1075,79 @@ a:hover, .stMarkdown a:hover {
     flex-shrink: 0;
 }
 .lumi-bubble {
-    max-width: 78%;
-    padding: 10px 16px;
-    border-radius: 20px;
+    max-width: 72%;
+    padding: 9px 14px;
+    border-radius: 18px;
     font-family: var(--font-body);
     font-size: 0.9rem;
-    line-height: 1.55;
+    line-height: 1.45;
     word-wrap: break-word;
     word-break: break-word;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     position: relative;
+    margin-bottom: 1px;
 }
-/* User bubbles: right-aligned, dark */
+/* User bubbles: right-aligned, iMessage blue */
 .lumi-bubble.user {
     align-self: flex-end;
-    background: rgba(0, 0, 0, 0.85);
+    background: #007AFF;
     color: #ffffff;
-    border-radius: 20px 20px 4px 20px;
-    animation: lumiBubbleInRight 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    border-radius: 18px 18px 4px 18px;
+    animation: lumiBubbleInRight 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
-/* Assistant bubbles: left-aligned, light */
+/* Assistant bubbles: left-aligned, iMessage gray */
 .lumi-bubble.assistant {
     align-self: flex-start;
-    background: var(--lumi-bg-soft);
-    color: var(--lumi-ink);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 20px 20px 20px 4px;
-    animation: lumiBubbleInLeft 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    background: #E9E9EB;
+    color: #000000;
+    border: none;
+    border-radius: 18px 18px 18px 4px;
+    animation: lumiBubbleInLeft 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+/* Links inside assistant bubbles */
+.lumi-bubble.assistant a { color: #007AFF; }
+.lumi-bubble.assistant code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.84em;
+}
+/* Links inside user bubbles */
+.lumi-bubble.user a { color: #ffffff; text-decoration: underline; }
+.lumi-bubble.user code {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.84em;
+}
+/* Delivered indicator (iMessage style) */
+.lumi-delivered {
+    align-self: flex-end;
+    font-size: 0.68rem;
+    color: rgba(60, 60, 67, 0.4);
+    padding: 2px 4px 4px;
+    font-weight: 400;
+    letter-spacing: -0.1px;
 }
 /* Error bubbles */
 .lumi-bubble.error {
     align-self: flex-start;
-    background: rgba(255, 59, 48, 0.06);
+    background: rgba(255, 59, 48, 0.08);
     color: #FF3B30;
-    border: 1px solid rgba(255, 59, 48, 0.15);
-    border-radius: 20px 20px 20px 4px;
+    border: none;
+    border-radius: 18px 18px 18px 4px;
 }
 /* Tool call card (inside chat) */
 .lumi-tool-call {
     align-self: flex-start;
-    max-width: 85%;
+    max-width: 80%;
     padding: 8px 14px;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 14px;
     background: rgba(0, 0, 0, 0.02);
     font-size: 0.82rem;
     color: var(--lumi-muted);
-    animation: lumiBubbleInLeft 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    animation: lumiBubbleInLeft 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+    margin-bottom: 1px;
 }
 .lumi-tool-call summary {
     cursor: pointer;
@@ -1115,9 +1170,10 @@ a:hover, .stMarkdown a:hover {
     font-size: 0.68rem;
     color: var(--lumi-muted);
     text-align: center;
-    padding: 8px 0;
+    padding: 10px 0 6px;
     align-self: center;
     user-select: none;
+    font-weight: 500;
 }
 
 /* ── Typing Dots ── */
@@ -1127,9 +1183,9 @@ a:hover, .stMarkdown a:hover {
     gap: 4px;
     padding: 12px 16px;
     align-self: flex-start;
-    background: var(--lumi-bg-soft);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 20px 20px 20px 4px;
+    background: #E9E9EB;
+    border: none;
+    border-radius: 18px 18px 18px 4px;
 }
 .lumi-typing-dots .dot {
     width: 7px;
@@ -1184,7 +1240,7 @@ a:hover, .stMarkdown a:hover {
     min-width: 34px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.85);
+    background: #007AFF;
     color: #fff;
     display: flex;
     align-items: center;
@@ -1194,10 +1250,10 @@ a:hover, .stMarkdown a:hover {
     transition: opacity 0.12s ease, background 0.12s ease;
 }
 .lumi-composer-send:hover {
-    background: #000000;
+    background: #0066D6;
 }
 .lumi-composer-send:disabled {
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(0, 122, 255, 0.3);
     cursor: not-allowed;
 }
 .lumi-composer-send svg {
@@ -1268,6 +1324,14 @@ a:hover, .stMarkdown a:hover {
 .lumi-title, .lumi-i-wrapper, .dna-slot {
     overflow: visible !important;
 }
+/* Prevent Streamlit from capping SVG sizes in our animation */
+.lumi-welcome svg,
+.lumi-title svg,
+.dna-slot svg {
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
 
 /* Tab panels: ensure content can scroll, never clip */
 .stTabs [data-baseweb="tab-panel"] {
@@ -1280,6 +1344,28 @@ a:hover, .stMarkdown a:hover {
     max-height: 65vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+}
+
+/* ── Streamlit Chat Input (iMessage style) ── */
+[data-testid="stChatInput"] {
+    border-radius: 22px !important;
+    border: 1px solid rgba(0, 0, 0, 0.10) !important;
+    background: #ffffff !important;
+}
+[data-testid="stChatInput"] textarea {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 0.92rem !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+    box-shadow: none !important;
+    border: none !important;
+}
+/* Focus ring on the chat input container */
+[data-testid="stChatInput"]:focus-within {
+    border-color: #007AFF !important;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12) !important;
 }
 
 /* Streamlit columns: consistent 8px gap + allow inner scroll */
@@ -1533,15 +1619,15 @@ a:hover, .stMarkdown a:hover {
 
 /* ── Eyelid blink (opacity-based) ── */
 @keyframes dnaBlinkSequence {
-    0%, 83%   { opacity: 0; }   /* eyes open */
-    85%, 87%  { opacity: 1; }   /* blink! */
-    89%       { opacity: 0; }   /* open */
-    92%, 94%  { opacity: 1; }   /* double-blink */
-    96%, 100% { opacity: 0; }   /* open */
+    0%, 83%   { transform: scaleY(0); }   /* eyes open */
+    85%, 87%  { transform: scaleY(1); }   /* blink! */
+    89%       { transform: scaleY(0); }   /* open */
+    92%, 94%  { transform: scaleY(1); }   /* double-blink */
+    96%, 100% { transform: scaleY(0); }   /* open */
 }
 @keyframes dnaIdleBlink {
-    0%, 90%, 100% { opacity: 0; }
-    93%, 95%      { opacity: 1; }
+    0%, 90%, 100% { transform: scaleY(0); }
+    93%, 95%      { transform: scaleY(1); }
 }
 
 /* ── Idle float after landing ── */
@@ -1559,7 +1645,7 @@ a:hover, .stMarkdown a:hover {
     .dna-char { animation: none !important; opacity: 1; transform: translateX(0) translateY(0); margin-left: -36px; }
     .lumi-letter-i { animation: none !important; transform: scaleY(0); opacity: 0; }
     .dna-pupil { animation: none !important; }
-    .dna-eyelid { animation: none !important; opacity: 0; }
+    .dna-eyelid { animation: none !important; transform: scaleY(0); }
     .dna-shadow { animation: none !important; opacity: 0.4; }
     .dna-body-group { animation: none !important; }
     .lumi-welcome-sub { animation: none !important; opacity: 1; }
@@ -1569,11 +1655,12 @@ a:hover, .stMarkdown a:hover {
     .lumi-welcome { padding: 40px 16px 24px; }
     .lumi-title { font-size: 72px !important; letter-spacing: -2.5px; padding-top: 120px; margin-top: -40px; }
     .lumi-i-wrapper { width: 38px; }
+    .lumi-letter-i { width: 38px; }
     .dna-char { width: 35px; height: 52px; }
     .dna-slot { width: 44px; height: 60px; }
     .lumi-welcome-pills { gap: 6px; }
     .lumi-pill { font-size: 12px; height: 32px; padding: 0 12px; }
-    .lumi-bubble { max-width: 90%; }
+    .lumi-bubble { max-width: 88%; }
     .lumi-composer-row { width: 96%; }
     .lumi-composer-input { height: 44px; font-size: 0.88rem; }
 

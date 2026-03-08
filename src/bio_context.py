@@ -103,15 +103,18 @@ def fetch_bio_context_mcp(query: ProteinQuery) -> BioContext:
         tools.append({"type": "mcp_toolset", "mcp_server_name": "biorender"})
 
     # Use the beta MCP connector
-    response = client.beta.messages.create(
-        model=CLAUDE_FAST_MODEL,
-        max_tokens=4096,
-        system=CONTEXT_SYSTEM,
-        messages=[{"role": "user", "content": user_prompt}],
-        mcp_servers=mcp_servers,
-        tools=tools,
-        betas=[MCP_BETA_HEADER],
-    )
+    try:
+        response = client.beta.messages.create(
+            model=CLAUDE_FAST_MODEL,
+            max_tokens=4096,
+            system=CONTEXT_SYSTEM,
+            messages=[{"role": "user", "content": user_prompt}],
+            mcp_servers=mcp_servers,
+            tools=tools,
+            betas=[MCP_BETA_HEADER],
+        )
+    except Exception:
+        return BioContext()
 
     # Extract the final text response (after all tool use)
     text = ""
@@ -149,12 +152,26 @@ def _parse_context_response(text: str) -> BioContext:
         dois=lit_data.get("dois", []),
     )
 
+    try:
+        disease_assocs = [
+            DiseaseAssociation(**d) for d in data.get("disease_associations", [])
+            if isinstance(d, dict)
+        ]
+    except Exception:
+        disease_assocs = []
+
+    try:
+        drugs = [
+            DrugCandidate(**d) for d in data.get("drugs", [])
+            if isinstance(d, dict)
+        ]
+    except Exception:
+        drugs = []
+
     return BioContext(
         narrative=data.get("narrative", ""),
-        disease_associations=[
-            DiseaseAssociation(**d) for d in data.get("disease_associations", [])
-        ],
-        drugs=[DrugCandidate(**d) for d in data.get("drugs", [])],
+        disease_associations=disease_assocs,
+        drugs=drugs,
         literature=literature,
         pathways=data.get("pathways", []),
         suggested_experiments=data.get("suggested_experiments", []),

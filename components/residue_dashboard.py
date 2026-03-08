@@ -44,6 +44,21 @@ _TRACK_DEFS: list[dict] = [
      "yaxis": "Variant", "color": "#E00000"},
     {"key": "bfactor", "label": "B-factor / Flexibility",
      "yaxis": "B-factor", "color": "#AC8E68"},
+    # ── New hidden-insight tracks ──
+    {"key": "hydrophobicity", "label": "Hydrophobicity",
+     "yaxis": "KD Score", "color": "#E67E22"},
+    {"key": "charge", "label": "Charge (pH 7.4)",
+     "yaxis": "Charge", "color": "#3498DB"},
+    {"key": "disorder", "label": "Disorder Prediction",
+     "yaxis": "Disorder", "color": "#8E8E93"},
+    {"key": "conservation", "label": "Conservation (1-9)",
+     "yaxis": "ConSurf", "color": "#9B59B6"},
+    {"key": "pocket_score", "label": "Pocket / Druggability",
+     "yaxis": "Pocket", "color": "#2ECC71"},
+    {"key": "residue_depth", "label": "Residue Depth",
+     "yaxis": "Depth (Å)", "color": "#1ABC9C"},
+    {"key": "ramachandran", "label": "Ramachandran Outliers",
+     "yaxis": "Rama", "color": "#E74C3C"},
 ]
 
 # Secondary structure color map (Mol* standard)
@@ -73,10 +88,21 @@ def render_residue_dashboard(
         ``{"pathogenic_positions": {pos_int: [variant_names]}}``
     """
     st.markdown("### Residue Property Dashboard")
-    st.caption(
+    _DASH_CAPTIONS = {
+        "structure": "Per-residue structural properties — confidence, accessibility, "
+                     "secondary structure, and backbone geometry.",
+        "mutation_impact": "Per-residue properties around the mutation site — "
+                           "conservation, pathogenicity, and structural context.",
+        "druggability": "Per-residue druggability signals — pocket scores, "
+                        "surface properties, and network centrality.",
+        "binding": "Per-residue binding interface properties — accessibility, "
+                   "hydrophobicity, charge, and contact density.",
+    }
+    st.caption(_DASH_CAPTIONS.get(
+        query.question_type,
         "Genome-browser-style multi-track view of per-residue properties. "
-        "All tracks share a synchronized x-axis -- zoom or pan to explore."
-    )
+        "All tracks share a synchronized x-axis — zoom or pan to explore.",
+    ))
 
     residue_ids: list[int] = structure_analysis.get("residue_ids", [])
     if not residue_ids:
@@ -103,12 +129,36 @@ def render_residue_dashboard(
     )
     all_labels = [t["label"] for t in _TRACK_DEFS if t["key"] in available_tracks]
 
+    # Smart defaults: show only tracks relevant to the scientist's question
+    _REC: dict[str, set[str]] = {
+        "structure": {"plddt", "sasa", "secondary_structure", "packing",
+                      "ramachandran", "residue_depth"},
+        "mutation_impact": {"plddt", "alphamissense", "conservation", "variants",
+                            "sasa", "centrality", "residue_depth"},
+        "druggability": {"plddt", "pocket_score", "sasa", "hydrophobicity",
+                         "centrality", "conservation"},
+        "binding": {"plddt", "sasa", "packing", "centrality",
+                    "hydrophobicity", "charge"},
+    }
+    rec_keys = _REC.get(query.question_type, set())
+    if rec_keys:
+        default_labels = [
+            t["label"] for t in _TRACK_DEFS
+            if t["key"] in available_tracks and t["key"] in rec_keys
+        ]
+    else:
+        default_labels = all_labels
+    label_pri = {t["label"]: (0 if t["key"] in rec_keys else 1) for t in _TRACK_DEFS}
+    all_labels_sorted = sorted(all_labels, key=lambda lb: label_pri.get(lb, 1))
+    qtype_label = query.question_type.replace("_", " ")
+
     selected_labels = st.multiselect(
         "Tracks to display",
-        options=all_labels,
-        default=all_labels,
+        options=all_labels_sorted,
+        default=default_labels or all_labels_sorted,
         key="residue_dashboard_tracks",
-        help="Select which data tracks to show. Deselect tracks to simplify the view.",
+        help=f"Showing tracks recommended for **{qtype_label}** analysis. "
+             "Add more tracks to explore additional properties.",
     )
 
     # Map selected labels back to keys
@@ -146,7 +196,6 @@ def render_residue_dashboard(
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(show_spinner="Building residue dashboard...")
 def _build_dashboard_figure(
     residue_ids: list[int],
     plddt_scores: list,
@@ -162,7 +211,7 @@ def _build_dashboard_figure(
     # Compute row heights: give secondary structure + variant tracks less height
     row_heights = []
     for td in track_defs:
-        if td["key"] in ("secondary_structure", "variants", "domains"):
+        if td["key"] in ("secondary_structure", "variants", "domains", "ramachandran"):
             row_heights.append(0.6)
         else:
             row_heights.append(1.0)
@@ -203,6 +252,20 @@ def _build_dashboard_figure(
             _add_variant_track(fig, row_idx, residue_ids, pathogenic_positions, hover_map)
         elif key == "bfactor":
             _add_bfactor_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+        elif key == "hydrophobicity":
+            _add_hydrophobicity_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "charge":
+            _add_charge_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "disorder":
+            _add_disorder_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "conservation":
+            _add_conservation_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "pocket_score":
+            _add_pocket_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "residue_depth":
+            _add_depth_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "ramachandran":
+            _add_ramachandran_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
 
         # Y-axis label
         fig.update_yaxes(
@@ -232,7 +295,7 @@ def _build_dashboard_figure(
         fig.add_annotation(
             x=mutation_pos,
             y=1.0,
-            yref=f"y{1 if n_tracks == 1 else ''} domain",
+            yref="y domain",
             xref="x",
             text=f"Pos {mutation_pos}",
             showarrow=True,
@@ -269,9 +332,10 @@ def _build_dashboard_figure(
         gridcolor="rgba(0,0,0,0.08)",
     )
 
-    # Style all subplot titles
-    for ann in fig.layout.annotations:
-        ann.update(font=dict(size=11, color="rgba(60,60,67,0.5)"), x=0.01, xanchor="left")
+    # Style only subplot title annotations (first n_tracks annotations from make_subplots)
+    for i, ann in enumerate(fig.layout.annotations):
+        if i < n_tracks:
+            ann.update(font=dict(size=11, color="rgba(60,60,67,0.5)"), x=0.01, xanchor="left")
 
     return fig
 
@@ -290,12 +354,16 @@ def _add_plddt_track(
 ) -> None:
     if not plddt_scores:
         return
-    # Ensure alignment and numeric types
-    scores = [
-        float(s) for s in plddt_scores[: len(residue_ids)]
+    # Ensure alignment and numeric types (paired filter to avoid misalignment)
+    paired = [
+        (r, float(s))
+        for r, s in zip(residue_ids, plddt_scores)
         if isinstance(s, (int, float))
     ]
-    rids = residue_ids[: len(scores)]
+    if not paired:
+        return
+    rids, scores = zip(*paired)
+    rids, scores = list(rids), list(scores)
     if not rids:
         return
 
@@ -339,7 +407,7 @@ def _add_alphamissense_track(
 
     from src.alphamissense import get_pathogenicity_color
 
-    residue_scores = am_data["residue_scores"]
+    residue_scores = am_data.get("residue_scores", {})
     vals = [residue_scores.get(r, 0.0) for r in residue_ids]
     colors = [get_pathogenicity_color(v) for v in vals]
 
@@ -384,13 +452,13 @@ def _add_domain_track(
     if not dom_data:
         return
 
-    domains = dom_data["domains"]
+    domains = dom_data.get("domains", [])
 
     # Build residue→color map
     res_colors: dict[int, str] = {}
     for d in domains:
-        for pos in range(d["start"], d["end"] + 1):
-            res_colors[pos] = d["color"]
+        for pos in range(d.get("start", 0), d.get("end", 0) + 1):
+            res_colors[pos] = d.get("color", "#CCCCCC")
 
     colors = [
         res_colors.get(r, "rgba(0,0,0,0.05)")
@@ -682,6 +750,399 @@ def _add_bfactor_track(
 
 
 # ---------------------------------------------------------------------------
+# New insight track builders (Phase 1: computed-but-invisible data)
+# ---------------------------------------------------------------------------
+
+
+def _get_surface_data() -> dict | None:
+    """Get cached surface property data from session state, or compute lazily."""
+    query = st.session_state.get("parsed_query")
+    pname = query.protein_name if query else "unknown"
+    key = f"_dashboard_surface_data_{pname}"
+    if key in st.session_state:
+        return st.session_state[key]
+    # Try to compute from PDB in session state
+    prediction = st.session_state.get("prediction_result")
+    if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
+        try:
+            from src.surface_properties import compute_surface_properties
+            data = compute_surface_properties(prediction.pdb_content)
+            st.session_state[key] = data
+            return data
+        except Exception:
+            pass
+    return None
+
+
+def _get_disorder_data() -> dict | None:
+    query = st.session_state.get("parsed_query")
+    pname = query.protein_name if query else "unknown"
+    key = f"_dashboard_disorder_data_{pname}"
+    if key in st.session_state:
+        return st.session_state[key]
+    prediction = st.session_state.get("prediction_result")
+    if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
+        try:
+            from src.disorder_prediction import predict_disorder
+            plddt = prediction.plddt_per_residue if hasattr(prediction, "plddt_per_residue") else None
+            data = predict_disorder(prediction.pdb_content, plddt)
+            st.session_state[key] = data
+            return data
+        except Exception:
+            pass
+    return None
+
+
+def _get_conservation_data() -> dict | None:
+    query = st.session_state.get("parsed_query")
+    pname = query.protein_name if query else "unknown"
+    key = f"_dashboard_conservation_data_{pname}"
+    if key in st.session_state:
+        return st.session_state[key]
+    prediction = st.session_state.get("prediction_result")
+    if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
+        try:
+            from src.conservation import compute_conservation_scores
+            data = compute_conservation_scores(prediction.pdb_content)
+            st.session_state[key] = data
+            return data
+        except Exception:
+            pass
+    return None
+
+
+def _get_pocket_data() -> dict | None:
+    query = st.session_state.get("parsed_query")
+    pname = query.protein_name if query else "unknown"
+    key = f"_dashboard_pocket_data_{pname}"
+    if key in st.session_state:
+        return st.session_state[key]
+    prediction = st.session_state.get("prediction_result")
+    if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
+        try:
+            from src.pocket_prediction import predict_pockets
+            data = predict_pockets(prediction.pdb_content)
+            st.session_state[key] = data
+            return data
+        except Exception:
+            pass
+    return None
+
+
+def _get_depth_data() -> dict | None:
+    query = st.session_state.get("parsed_query")
+    pname = query.protein_name if query else "unknown"
+    key = f"_dashboard_depth_data_{pname}"
+    if key in st.session_state:
+        return st.session_state[key]
+    prediction = st.session_state.get("prediction_result")
+    if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
+        try:
+            from src.residue_depth import compute_residue_depth
+            data = compute_residue_depth(prediction.pdb_content)
+            st.session_state[key] = data
+            return data
+        except Exception:
+            pass
+    return None
+
+
+def _add_hydrophobicity_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """Kyte-Doolittle hydrophobicity profile with hydrophobic patches highlighted."""
+    data = _get_surface_data()
+    if not data:
+        return
+    smoothed = data.get("hydrophobicity_smoothed", {})
+    if not smoothed:
+        return
+
+    vals = [smoothed.get(r, 0.0) for r in residue_ids]
+
+    # Color: hydrophobic = orange, hydrophilic = blue
+    colors = [
+        "#E67E22" if v > 0 else "#3498DB" for v in vals
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Hydrophobicity",
+        ),
+        row=row, col=1,
+    )
+    fig.add_hline(
+        y=0, line_dash="dot", line_color="rgba(0,0,0,0.2)",
+        row=row, col=1,
+    )
+
+
+def _add_charge_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """Per-residue charge at pH 7.4 (positive = blue, negative = red)."""
+    data = _get_surface_data()
+    if not data:
+        return
+    charge = data.get("charge", {})
+    if not charge:
+        return
+
+    vals = [charge.get(r, 0.0) for r in residue_ids]
+    colors = []
+    for v in vals:
+        if v > 0.5:
+            colors.append("#3498DB")   # positive (K, R)
+        elif v < -0.5:
+            colors.append("#E74C3C")   # negative (D, E)
+        else:
+            colors.append("#BDC3C7")   # neutral
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Charge",
+        ),
+        row=row, col=1,
+    )
+    fig.update_yaxes(range=[-1.2, 1.2], row=row, col=1)
+
+
+def _add_disorder_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """Multi-signal disorder prediction (>0.5 = disordered)."""
+    data = _get_disorder_data()
+    if not data:
+        return
+    scores = data.get("disorder_scores", {})
+    if not scores:
+        return
+
+    vals = [scores.get(r, 0.0) for r in residue_ids]
+    colors = ["#FF6B6B" if v > 0.5 else "#95A5A6" for v in vals]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Disorder",
+        ),
+        row=row, col=1,
+    )
+    fig.add_hline(
+        y=0.5, line_dash="dot", line_color="rgba(255,107,107,0.5)",
+        row=row, col=1,
+        annotation_text="disordered",
+        annotation_font=dict(size=8, color="rgba(255,107,107,0.6)"),
+        annotation_position="top right",
+    )
+    fig.update_yaxes(range=[0, 1.05], row=row, col=1)
+
+
+def _add_conservation_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """ConSurf-like conservation (1-9 scale, 9=most conserved)."""
+    data = _get_conservation_data()
+    if not data:
+        return
+    scores = data.get("conservation_scores", {})
+    if not scores:
+        return
+
+    vals = [scores.get(r, 5) for r in residue_ids]
+
+    # ConSurf color scheme: variable=cyan → conserved=magenta
+    def _consurf_color(s: int) -> str:
+        palette = {
+            1: "#00D4FF", 2: "#16B8DE", 3: "#2C9CBD",
+            4: "#438199", 5: "#596675", 6: "#704B54",
+            7: "#873033", 8: "#9D1512", 9: "#B40000",
+        }
+        return palette.get(s, "#596675")
+
+    colors = [_consurf_color(int(v)) for v in vals]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Conservation",
+        ),
+        row=row, col=1,
+    )
+    fig.add_hline(
+        y=7, line_dash="dot", line_color="rgba(180,0,0,0.3)",
+        row=row, col=1,
+        annotation_text="highly conserved",
+        annotation_font=dict(size=8, color="rgba(180,0,0,0.4)"),
+        annotation_position="top right",
+    )
+    fig.update_yaxes(range=[0, 10], row=row, col=1)
+
+
+def _add_pocket_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """Per-residue pocket/druggability score."""
+    data = _get_pocket_data()
+    if not data:
+        return
+    scores = data.get("residue_pocket_scores", {})
+    if not scores:
+        return
+
+    vals = [scores.get(r, 0.0) for r in residue_ids]
+
+    # Highlight pocket residues in green
+    colors = ["#2ECC71" if v > 0.5 else "rgba(46,204,113,0.25)" for v in vals]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Pocket Score",
+        ),
+        row=row, col=1,
+    )
+    fig.add_hline(
+        y=0.5, line_dash="dot", line_color="rgba(46,204,113,0.4)",
+        row=row, col=1,
+        annotation_text="pocket threshold",
+        annotation_font=dict(size=8, color="rgba(46,204,113,0.5)"),
+        annotation_position="top right",
+    )
+    fig.update_yaxes(range=[0, 1.05], row=row, col=1)
+
+
+def _add_depth_track(
+    fig: go.Figure, row: int, residue_ids: list[int], hover_map: dict[int, str],
+) -> None:
+    """Residue depth (distance to nearest surface atom in Å)."""
+    data = _get_depth_data()
+    if not data:
+        return
+    depth = data.get("depth", {})
+    if not depth:
+        return
+
+    vals = [depth.get(r, 0.0) for r in residue_ids]
+
+    # Gradient: shallow=light teal, deep=dark teal
+    max_d = max(vals) if vals else 1
+    colors = [
+        f"rgba(26,188,156,{min(1, 0.2 + 0.8 * v / max_d)})" if max_d > 0
+        else "rgba(26,188,156,0.3)"
+        for v in vals
+    ]
+
+    fig.add_trace(
+        go.Scatter(
+            x=residue_ids, y=vals,
+            mode="lines",
+            line=dict(color="#1ABC9C", width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(26,188,156,0.15)",
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Depth",
+        ),
+        row=row, col=1,
+    )
+    # Depth zone lines
+    fig.add_hline(
+        y=4.0, line_dash="dot", line_color="rgba(26,188,156,0.3)",
+        row=row, col=1,
+        annotation_text="surface",
+        annotation_font=dict(size=8, color="rgba(26,188,156,0.5)"),
+        annotation_position="top right",
+    )
+    fig.add_hline(
+        y=8.0, line_dash="dot", line_color="rgba(26,188,156,0.5)",
+        row=row, col=1,
+        annotation_text="deep core",
+        annotation_font=dict(size=8, color="rgba(26,188,156,0.7)"),
+        annotation_position="top right",
+    )
+
+
+def _add_ramachandran_track(
+    fig: go.Figure, row: int, residue_ids: list[int],
+    analysis: dict, hover_map: dict[int, str],
+) -> None:
+    """Ramachandran outlier indicators (red = outlier, yellow = allowed, hidden = favored)."""
+    rama = analysis.get("ramachandran", [])
+    if not rama:
+        return
+
+    # Build residue → classification map
+    rama_class: dict[int, str] = {}
+    for r in rama:
+        rid = r["residue"]
+        phi, psi = r["phi"], r["psi"]
+        if _rama_is_favored(phi, psi):
+            rama_class[rid] = "favored"
+        elif _rama_is_allowed(phi, psi):
+            rama_class[rid] = "allowed"
+        else:
+            rama_class[rid] = "outlier"
+
+    # Only show allowed + outlier residues (favored = baseline)
+    y_vals = []
+    colors = []
+    for r in residue_ids:
+        cls = rama_class.get(r, "favored")
+        if cls == "outlier":
+            y_vals.append(1.0)
+            colors.append("#E74C3C")
+        elif cls == "allowed":
+            y_vals.append(0.5)
+            colors.append("#F39C12")
+        else:
+            y_vals.append(0.0)
+            colors.append("rgba(0,0,0,0.03)")
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids, y=y_vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text", name="Rama",
+        ),
+        row=row, col=1,
+    )
+    fig.update_yaxes(range=[0, 1.2], showticklabels=False, row=row, col=1)
+
+
+def _rama_is_favored(phi: float, psi: float) -> bool:
+    if -160 <= phi <= -20 and -120 <= psi <= 20:
+        return True
+    if -180 <= phi <= -40 and 80 <= psi <= 180:
+        return True
+    if -180 <= phi <= -40 and -180 <= psi <= -120:
+        return True
+    return False
+
+
+def _rama_is_allowed(phi: float, psi: float) -> bool:
+    if _rama_is_favored(phi, psi):
+        return False
+    if -180 <= phi <= 0 and -180 <= psi <= 180:
+        return True
+    if 20 <= phi <= 120 and -20 <= psi <= 80:
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Hover text builder
 # ---------------------------------------------------------------------------
 
@@ -719,6 +1180,23 @@ def _build_hover_map(
     if _dom:
         domain_map = _dom.get("domain_map", {})
 
+    # Gather new insight data
+    _surface = _get_surface_data()
+    hydrophobicity = _surface.get("hydrophobicity_smoothed", {}) if _surface else {}
+    charge_data = _surface.get("charge", {}) if _surface else {}
+
+    _disorder = _get_disorder_data()
+    disorder_scores = _disorder.get("disorder_scores", {}) if _disorder else {}
+
+    _conservation = _get_conservation_data()
+    conservation_scores = _conservation.get("conservation_scores", {}) if _conservation else {}
+
+    _pocket = _get_pocket_data()
+    pocket_scores = _pocket.get("residue_pocket_scores", {}) if _pocket else {}
+
+    _depth = _get_depth_data()
+    depth_vals = _depth.get("depth", {}) if _depth else {}
+
     hover_map: dict[int, str] = {}
     for r in residue_ids:
         lines = [f"<b>Residue {r}</b>"]
@@ -750,6 +1228,28 @@ def _build_hover_map(
 
         if r in contacts:
             lines.append(f"Contacts: {contacts[r]}")
+
+        # New insight data in hover
+        if r in hydrophobicity:
+            label = "hydrophobic" if hydrophobicity[r] > 0 else "hydrophilic"
+            lines.append(f"Hydro: {hydrophobicity[r]:+.2f} ({label})")
+
+        if r in charge_data and charge_data[r] != 0:
+            sign = "+" if charge_data[r] > 0 else ""
+            lines.append(f"Charge: {sign}{charge_data[r]:.1f}")
+
+        if r in disorder_scores:
+            is_dis = "DISORDERED" if disorder_scores[r] > 0.5 else "ordered"
+            lines.append(f"Disorder: {disorder_scores[r]:.2f} ({is_dis})")
+
+        if r in conservation_scores:
+            lines.append(f"Conservation: {conservation_scores[r]}/9")
+
+        if r in pocket_scores and pocket_scores[r] > 0.3:
+            lines.append(f"Pocket: {pocket_scores[r]:.2f}")
+
+        if r in depth_vals:
+            lines.append(f"Depth: {depth_vals[r]:.1f} Å")
 
         if r in pathogenic_positions:
             names = pathogenic_positions[r]
@@ -818,6 +1318,21 @@ def _detect_available_tracks(
     # Check for domain data (current query only)
     if _get_current_domain_data():
         available.add("domains")
+
+    # New hidden-insight tracks — detected lazily from session state or computable
+    if _get_surface_data():
+        available.add("hydrophobicity")
+        available.add("charge")
+    if _get_disorder_data():
+        available.add("disorder")
+    if _get_conservation_data():
+        available.add("conservation")
+    if _get_pocket_data():
+        available.add("pocket_score")
+    if _get_depth_data():
+        available.add("residue_depth")
+    if analysis.get("ramachandran"):
+        available.add("ramachandran")
 
     return available
 

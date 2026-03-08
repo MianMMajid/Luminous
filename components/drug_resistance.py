@@ -395,9 +395,9 @@ def _render_resistance_card(
     # Drug impact table
     drugs = mut_data.get("drugs_affected", [])
     if drugs:
-        cols = st.columns(len(drugs))
+        cols = st.columns(max(len(drugs), 1))
         for col, drug in zip(cols, drugs):
-            status = drug["status"]
+            status = drug.get("status", "Unknown")
             if "Resistant" in status:
                 _icon, color = "✗", "#E00000"
             elif "Sensitiz" in status:

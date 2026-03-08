@@ -115,7 +115,7 @@ def _parse_substitution_csv(
 
         # Detect format: 3-col (variant,score,class)
         # or 4-col (uniprot,variant,score,class)
-        if len(row) >= 4 and not row[0][0].isalpha():
+        if len(row) >= 4 and (not first or not first[0].isalpha()):
             continue
         if len(row) >= 4:
             # 4-column format
@@ -161,7 +161,7 @@ def _parse_substitution_csv(
 
     # Average scores per residue
     avg_scores = {
-        pos: sum(scores) / len(scores)
+        pos: sum(scores) / len(scores) if scores else 0.0
         for pos, scores in residue_scores.items()
     }
 
@@ -171,7 +171,8 @@ def _parse_substitution_csv(
         counts: dict[str, int] = {}
         for v in votes:
             counts[v] = counts.get(v, 0) + 1
-        classification[pos] = max(counts, key=counts.get)
+        if counts:
+            classification[pos] = max(counts, key=counts.get)
 
     # Summary stats
     n_pathogenic = sum(
@@ -185,13 +186,16 @@ def _parse_substitution_csv(
     )
     total = len(classification)
 
-    summary = (
-        f"AlphaMissense data for {uniprot_id}: "
-        f"{total} residues scored. "
-        f"{n_pathogenic} pathogenic ({n_pathogenic/total:.0%}), "
-        f"{n_ambiguous} ambiguous ({n_ambiguous/total:.0%}), "
-        f"{n_benign} benign ({n_benign/total:.0%})."
-    )
+    if total > 0:
+        summary = (
+            f"AlphaMissense data for {uniprot_id}: "
+            f"{total} residues scored. "
+            f"{n_pathogenic} pathogenic ({n_pathogenic/total:.0%}), "
+            f"{n_ambiguous} ambiguous ({n_ambiguous/total:.0%}), "
+            f"{n_benign} benign ({n_benign/total:.0%})."
+        )
+    else:
+        summary = f"AlphaMissense data for {uniprot_id}: no residues classified."
 
     return {
         "residue_scores": avg_scores,
@@ -208,6 +212,7 @@ def get_pathogenicity_color(score: float) -> str:
     Uses AFDB 2025 standard:
       Blue (benign, <0.34) → White (ambiguous) → Red (pathogenic, >0.564)
     """
+    score = max(0.0, min(1.0, score))  # Clamp to valid range
     if score < 0.34:
         # Benign: deep blue → light blue
         frac = score / 0.34

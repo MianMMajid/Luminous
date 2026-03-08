@@ -1138,7 +1138,8 @@ def build_elbow_plot(
     ))
 
     # Mark optimal K
-    opt_idx = int(np.where(k_values == optimal_k)[0][0]) if optimal_k in k_values else 0
+    _where = np.where(k_values == optimal_k)[0]
+    opt_idx = int(_where[0]) if len(_where) > 0 else 0
     fig.add_trace(go.Scatter(
         x=[int(optimal_k)],
         y=[float(inertias[opt_idx])],

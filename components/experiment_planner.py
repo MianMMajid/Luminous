@@ -206,7 +206,11 @@ def render_experiment_plan(plan: dict) -> None:
 
 def _render_flow_diagram(steps: list[dict]) -> None:
     """Render steps as a flow diagram using streamlit-flow-component."""
-    from streamlit_flow import StreamlitFlowEdge, StreamlitFlowNode, streamlit_flow
+    try:
+        from streamlit_flow import StreamlitFlowEdge, StreamlitFlowNode, streamlit_flow
+    except ImportError:
+        st.info("Flow diagram requires `streamlit-flow-component`. Install it for visual diagrams.")
+        return
 
     nodes = []
     edges = []

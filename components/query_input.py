@@ -129,7 +129,13 @@ def _do_parse(text: str, example_data: dict | None = None):
     """Parse the query and store results in session state."""
     # Reset downstream results
     for key in ["prediction_result", "trust_audit", "bio_context", "interpretation",
-                "generated_hypotheses"]:
+                "generated_hypotheses", "stats_data", "stats_results",
+                "stats_survival_data", "structure_analysis",
+                "panel_figure_data", "graphical_abstract_svg",
+                "figure_checklist_state", "experiment_tracker",
+                "sketch_image_bytes", "sketch_interpretation",
+                "comparison_data", "playground_inspiration",
+                "esmfold_pdb", "docked_complex_pdb"]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
     # Clear dynamic caches keyed by protein name or uniprot ID
@@ -138,7 +144,8 @@ def _do_parse(text: str, example_data: dict | None = None):
             "variant_data_", "alphamissense_", "domains_",
             "flexibility_", "pockets_", "struct_analysis_",
             "alphafold_", "biorender_results_",
-            "tamarind_results_",
+            "tamarind_results_", "svg_diagram_",
+            "_dashboard_",
         )):
             del st.session_state[k]
 
