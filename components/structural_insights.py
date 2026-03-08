@@ -131,6 +131,19 @@ def render_structural_insights(
             if has_network:
                 _render_network_centrality(analysis, mutation_pos, pathogenic_positions)
 
+    # Row 7: Conservation × Depth cross-insight (reveals functionally constrained buried residues)
+    _render_conservation_depth_scatter(
+        prediction, query, mutation_pos, pathogenic_positions, pocket_residues,
+    )
+
+    # Row 8: Structural Communication Path (mutation → nearest pocket/active site)
+    if mutation_pos and pocket_residues:
+        _render_communication_path(prediction, query, mutation_pos, pocket_residues)
+
+    # Row 9: Hydrophobic Patch Map (surface clusters for binding site prediction)
+    if query.question_type in ("druggability", "binding", "structure"):
+        _render_hydrophobic_patches(prediction, query, mutation_pos, pocket_residues)
+
 
 def _get_pocket_residues(protein_name: str) -> list[int]:
     """Get binding pocket residues from resistance DB if available."""
@@ -1124,3 +1137,562 @@ def _render_network_centrality(
     if var_hubs:
         hub_names = ", ".join(f"{v['name']} (pos {v['position']})" for v in var_hubs)
         st.warning(f"**Pathogenic variants at hub residues:** {hub_names}")
+
+
+def _render_conservation_depth_scatter(
+    prediction: PredictionResult,
+    query: ProteinQuery,
+    mutation_pos: int | None,
+    pathogenic_positions: dict,
+    pocket_residues: list[int],
+):
+    """Conservation × Burial Depth scatter — reveals functionally constrained residues.
+
+    This is a 2D cross-correlation plot that combines two independent data streams
+    (sequence conservation and structural depth) to surface insights neither can
+    show alone. Residues that are BOTH highly conserved AND deeply buried are the
+    structural pillars of the protein — mutations here are most destabilizing.
+    """
+    if not prediction.pdb_content:
+        return
+
+    # Compute both data streams
+    try:
+        from src.conservation import compute_conservation_scores
+        from src.residue_depth import compute_residue_depth
+
+        cons_data = compute_conservation_scores(prediction.pdb_content)
+        depth_data = compute_residue_depth(prediction.pdb_content)
+    except Exception:
+        return
+
+    cons_scores = cons_data.get("conservation_scores", {})
+    depth_vals = depth_data.get("depth", {})
+
+    if not cons_scores or not depth_vals:
+        return
+
+    # Build per-residue dataset with shared keys
+    residues = sorted(set(cons_scores.keys()) & set(depth_vals.keys()))
+    if len(residues) < 10:
+        return
+
+    conservation = [cons_scores[r] for r in residues]
+    depth = [depth_vals[r] for r in residues]
+
+    # Classify each residue structurally
+    pocket_set = set(pocket_residues) if pocket_residues else set()
+    pathogenic_set = set()
+    for pos_key in pathogenic_positions:
+        try:
+            pathogenic_set.add(int(pos_key))
+        except (ValueError, TypeError):
+            pass
+
+    # Get SASA for surface/interface classification
+    sasa_data = {}
+    analysis = st.session_state.get(
+        f"struct_analysis_{query.protein_name}_{query.mutation}"
+    )
+    if analysis:
+        sasa_data = analysis.get("sasa_per_residue", {})
+
+    categories = []
+    for r in residues:
+        if r == mutation_pos:
+            categories.append("Mutation Site")
+        elif r in pathogenic_set:
+            categories.append("Pathogenic Variant")
+        elif r in pocket_set:
+            categories.append("Binding Pocket")
+        elif sasa_data.get(r, 0) < 5:
+            categories.append("Buried Core")
+        else:
+            categories.append("Other")
+
+    _CAT_COLORS = {
+        "Mutation Site": "#FF3B30",
+        "Pathogenic Variant": "#FF9500",
+        "Binding Pocket": "#AF52DE",
+        "Buried Core": "#007AFF",
+        "Other": "#C7C7CC",
+    }
+    _CAT_SIZES = {
+        "Mutation Site": 14,
+        "Pathogenic Variant": 10,
+        "Binding Pocket": 9,
+        "Buried Core": 5,
+        "Other": 4,
+    }
+    _CAT_SYMBOLS = {
+        "Mutation Site": "x",
+        "Pathogenic Variant": "diamond",
+        "Binding Pocket": "square",
+        "Buried Core": "circle",
+        "Other": "circle",
+    }
+
+    st.markdown("#### Conservation × Burial Depth")
+    st.caption(
+        "Residues that are both highly conserved and deeply buried are the structural "
+        "pillars of the protein — mutations here carry the highest destabilization risk."
+    )
+
+    fig = go.Figure()
+
+    # Plot each category as a separate trace for legend clarity
+    for cat in ["Other", "Buried Core", "Binding Pocket", "Pathogenic Variant", "Mutation Site"]:
+        mask = [i for i, c in enumerate(categories) if c == cat]
+        if not mask:
+            continue
+        fig.add_trace(go.Scatter(
+            x=[conservation[i] for i in mask],
+            y=[depth[i] for i in mask],
+            mode="markers",
+            name=cat,
+            marker=dict(
+                size=_CAT_SIZES[cat],
+                color=_CAT_COLORS[cat],
+                symbol=_CAT_SYMBOLS[cat],
+                line=dict(width=0.5, color="white") if cat != "Other" else dict(width=0),
+                opacity=0.9 if cat != "Other" else 0.35,
+            ),
+            text=[f"Res {residues[i]}" for i in mask],
+            hovertemplate=(
+                "<b>Residue %{text}</b><br>"
+                "Conservation: %{x}/9<br>"
+                "Depth: %{y:.1f} Å<br>"
+                f"<i>{cat}</i>"
+                "<extra></extra>"
+            ),
+        ))
+
+    # Add quadrant annotations
+    max_depth = max(depth) if depth else 10
+    fig.add_shape(
+        type="rect", x0=7, x1=9.5, y0=max_depth * 0.6, y1=max_depth * 1.05,
+        fillcolor="rgba(255,59,48,0.06)", line=dict(width=0),
+        layer="below",
+    )
+    fig.add_annotation(
+        x=8, y=max_depth * 0.95,
+        text="<b>Structural pillars</b><br><span style='font-size:10px'>conserved + buried</span>",
+        showarrow=False, font=dict(size=10, color="#FF3B30"),
+        bgcolor="rgba(255,255,255,0.8)",
+    )
+
+    fig.add_shape(
+        type="rect", x0=7, x1=9.5, y0=0, y1=max_depth * 0.3,
+        fillcolor="rgba(52,199,89,0.06)", line=dict(width=0),
+        layer="below",
+    )
+    fig.add_annotation(
+        x=8, y=max_depth * 0.05,
+        text="<b>Functional surface</b><br><span style='font-size:10px'>conserved + exposed</span>",
+        showarrow=False, font=dict(size=10, color="#34C759"),
+        bgcolor="rgba(255,255,255,0.8)",
+    )
+
+    fig.update_layout(
+        xaxis_title="Conservation Score (1=variable → 9=conserved)",
+        yaxis_title="Burial Depth (Å from surface)",
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="#000000",
+        height=420,
+        margin=dict(t=10, b=50, l=60, r=20),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1, font=dict(size=11),
+        ),
+        xaxis=dict(
+            gridcolor="rgba(0,0,0,0.08)", range=[0.5, 9.5],
+            dtick=1,
+        ),
+        yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Summary insight
+    # Count residues in the "danger zone" (conserved ≥7 AND deep ≥ 60% of max)
+    depth_threshold = max_depth * 0.6 if max_depth > 0 else 5
+    pillars = [
+        r for r, c, d in zip(residues, conservation, depth)
+        if c >= 7 and d >= depth_threshold
+    ]
+    if mutation_pos and mutation_pos in pillars:
+        st.error(
+            f"**{query.mutation or f'Residue {mutation_pos}'} sits in the structural pillar zone** "
+            f"— both highly conserved (score ≥7) and deeply buried (≥{depth_threshold:.0f} Å). "
+            f"This mutation carries very high destabilization risk."
+        )
+    elif pillars:
+        pct = len(pillars) / len(residues) * 100
+        st.info(
+            f"**{len(pillars)} structural pillar residues** ({pct:.1f}% of protein) "
+            f"identified — conserved ≥7 and buried ≥{depth_threshold:.0f} Å. "
+            f"These positions are the most intolerant to mutation."
+        )
+
+
+def _render_communication_path(
+    prediction: PredictionResult,
+    query: ProteinQuery,
+    mutation_pos: int,
+    pocket_residues: list[int],
+):
+    """Show the shortest structural communication path from mutation to binding pocket.
+
+    This reveals how a mutation's effect can propagate through the protein's
+    contact network to reach a distant functional site — the structural basis
+    for allosteric effects and long-range coupling.
+    """
+    if not prediction.pdb_content or not pocket_residues:
+        return
+
+    try:
+        from src.protein_network import find_communication_path
+    except ImportError:
+        return
+
+    # Find shortest path to each pocket residue, pick the shortest
+    best_path = None
+    for target in pocket_residues:
+        if target == mutation_pos:
+            continue
+        result = find_communication_path(
+            prediction.pdb_content, mutation_pos, target,
+        )
+        if result.get("error"):
+            continue
+        if best_path is None or result["path_length"] < best_path["path_length"]:
+            best_path = result
+
+    if best_path is None or not best_path.get("path"):
+        return
+
+    path = best_path["path"]
+    steps = best_path["steps"]
+
+    st.markdown("#### Structural Communication Path")
+    st.caption(
+        f"Shortest contact-network path from **{query.mutation or f'residue {mutation_pos}'}** "
+        f"to the nearest binding pocket residue ({best_path['target']}). "
+        f"Each hop is a Cα–Cα contact < 8 Å."
+    )
+
+    # Metrics row
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Path Hops", best_path["n_hops"])
+    m2.metric("Network Distance", f"{best_path['path_length']} Å")
+    m3.metric("Direct Distance", f"{best_path['direct_distance']} Å")
+    m4.metric(
+        "Path/Direct Ratio",
+        f"{best_path['path_to_direct_ratio']}×",
+        help="Ratio > 2 suggests a tortuous path — the effect must traverse "
+             "significant structural distance to reach the pocket.",
+    )
+
+    # Visualization: pathway as a horizontal chain diagram
+    fig = go.Figure()
+
+    # Path residue positions along x
+    x_pos = list(range(len(path)))
+
+    # Get conservation and depth for path residues (if available)
+    try:
+        from src.conservation import compute_conservation_scores
+        cons = compute_conservation_scores(prediction.pdb_content).get("conservation_scores", {})
+    except Exception:
+        cons = {}
+
+    # Color nodes by role
+    node_colors = []
+    node_sizes = []
+    node_labels = []
+    for i, r in enumerate(path):
+        if r == mutation_pos:
+            node_colors.append("#FF3B30")
+            node_sizes.append(18)
+            node_labels.append(f"<b>{query.mutation or r}</b><br>Mutation")
+        elif r == best_path["target"]:
+            node_colors.append("#AF52DE")
+            node_sizes.append(18)
+            node_labels.append(f"<b>Res {r}</b><br>Pocket")
+        else:
+            c = cons.get(r, 5)
+            node_colors.append("#007AFF" if c >= 7 else "#34C759" if c >= 4 else "#8E8E93")
+            node_sizes.append(12)
+            node_labels.append(f"Res {r}<br>Cons: {c}/9")
+
+    # Draw edges (steps) as lines
+    for i, step in enumerate(steps):
+        fig.add_trace(go.Scatter(
+            x=[x_pos[i], x_pos[i + 1]],
+            y=[0, 0],
+            mode="lines",
+            line=dict(
+                color="rgba(0,0,0,0.2)",
+                width=max(1, 6 - step["distance"] / 2),
+            ),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+        # Distance label on edge
+        fig.add_annotation(
+            x=(x_pos[i] + x_pos[i + 1]) / 2,
+            y=0.15,
+            text=f"{step['distance']}Å",
+            showarrow=False,
+            font=dict(size=9, color="rgba(60,60,67,0.55)"),
+        )
+
+    # Draw nodes
+    fig.add_trace(go.Scatter(
+        x=x_pos,
+        y=[0] * len(path),
+        mode="markers+text",
+        marker=dict(
+            size=node_sizes,
+            color=node_colors,
+            line=dict(width=2, color="white"),
+        ),
+        text=[str(r) for r in path],
+        textposition="bottom center",
+        textfont=dict(size=10),
+        hovertext=node_labels,
+        hoverinfo="text",
+        showlegend=False,
+    ))
+
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=160,
+        margin=dict(t=20, b=40, l=20, r=20),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.5, 0.5]),
+        showlegend=False,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Interpretation
+    ratio = best_path["path_to_direct_ratio"]
+    if ratio > 2.5:
+        st.warning(
+            f"**Tortuous communication path** — the network distance is {ratio}× the "
+            f"direct distance, suggesting the mutation's effect must traverse a "
+            f"complex structural route to reach the binding pocket."
+        )
+    elif best_path["n_hops"] <= 3:
+        st.error(
+            f"**Short-range coupling** — only {best_path['n_hops']} hops from mutation "
+            f"to binding pocket. This mutation likely has direct impact on drug binding."
+        )
+    else:
+        st.info(
+            f"**{best_path['n_hops']}-hop structural pathway** from mutation to pocket — "
+            f"the effect propagates through {best_path['n_hops'] - 1} relay residues."
+        )
+
+
+def _render_hydrophobic_patches(
+    prediction: PredictionResult,
+    query: ProteinQuery,
+    mutation_pos: int | None,
+    pocket_residues: list[int],
+):
+    """Surface hydrophobic patch map — identifies potential binding interfaces.
+
+    Clusters surface-exposed hydrophobic residues into spatial patches.
+    Large contiguous hydrophobic patches on the surface are strong indicators
+    of protein-protein interaction sites or drug binding hotspots.
+    """
+    if not prediction.pdb_content:
+        return
+
+    try:
+        import biotite.structure as struc
+        import biotite.structure.io.pdb as pdbio
+    except ImportError:
+        return
+
+    pdb_file = pdbio.PDBFile.read(__import__("io").StringIO(prediction.pdb_content))
+    structure = pdb_file.get_structure(model=1)
+    aa_mask = struc.filter_amino_acids(structure)
+    protein = structure[aa_mask]
+    ca = protein[protein.atom_name == "CA"]
+
+    if len(ca) < 10:
+        return
+
+    res_ids = [int(r) for r in ca.res_id]
+    res_names = list(ca.res_name)
+    coords = ca.coord
+
+    # Kyte-Doolittle scale
+    KD = {
+        "ILE": 4.5, "VAL": 4.2, "LEU": 3.8, "PHE": 2.8, "CYS": 2.5,
+        "MET": 1.9, "ALA": 1.8, "GLY": -0.4, "THR": -0.7, "SER": -0.8,
+        "TRP": -0.9, "TYR": -1.3, "PRO": -1.6, "HIS": -3.2, "GLU": -3.5,
+        "GLN": -3.5, "ASP": -3.5, "ASN": -3.5, "LYS": -3.9, "ARG": -4.5,
+    }
+
+    # Compute SASA to find surface residues
+    try:
+        sasa = struc.sasa(protein, vdw_radii="ProtOr")
+    except Exception:
+        return
+
+    # Per-residue SASA
+    res_sasa = {}
+    for r_id in set(res_ids):
+        mask = protein.res_id == r_id
+        res_sasa[r_id] = float(sasa[mask].sum()) if mask.any() else 0
+
+    # Surface hydrophobic residues: SASA > 10 Å² and KD > 0.5
+    surface_hydrophobic = []
+    for i, (r, name) in enumerate(zip(res_ids, res_names)):
+        if res_sasa.get(r, 0) > 10 and KD.get(name, 0) > 0.5:
+            surface_hydrophobic.append((r, coords[i], KD.get(name, 0)))
+
+    if len(surface_hydrophobic) < 3:
+        return
+
+    # Cluster into spatial patches (simple distance-based clustering)
+    patches = []
+    assigned = set()
+    for i, (r1, c1, kd1) in enumerate(surface_hydrophobic):
+        if r1 in assigned:
+            continue
+        patch = [(r1, c1, kd1)]
+        assigned.add(r1)
+        # Grow patch by adding nearby hydrophobic residues
+        for j, (r2, c2, kd2) in enumerate(surface_hydrophobic):
+            if r2 in assigned:
+                continue
+            # Check if close to any member of current patch
+            for _, pc, _ in patch:
+                if np.linalg.norm(c2 - pc) < 10.0:  # 10 Å cutoff
+                    patch.append((r2, c2, kd2))
+                    assigned.add(r2)
+                    break
+        if len(patch) >= 3:  # Only keep patches with ≥3 residues
+            patches.append(patch)
+
+    if not patches:
+        return
+
+    # Sort by size (largest first)
+    patches.sort(key=len, reverse=True)
+
+    st.markdown("#### Surface Hydrophobic Patches")
+    st.caption(
+        "Clusters of surface-exposed hydrophobic residues — potential protein-protein "
+        "interaction sites or drug binding hotspots. Larger patches correlate with "
+        "higher binding propensity."
+    )
+
+    pocket_set = set(pocket_residues) if pocket_residues else set()
+
+    # Summary metrics
+    total_hp = sum(len(p) for p in patches)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Hydrophobic Patches", len(patches))
+    m2.metric("Largest Patch", f"{len(patches[0])} residues")
+    m3.metric("Total Surface HP", f"{total_hp} residues")
+
+    # Visualization: patches as colored blocks along sequence
+    _PATCH_COLORS = [
+        "#FF9500", "#007AFF", "#34C759", "#AF52DE", "#FF2D55",
+        "#5856D6", "#FF6482", "#30B0C7",
+    ]
+
+    fig = go.Figure()
+
+    for idx, patch in enumerate(patches[:8]):  # Show top 8
+        color = _PATCH_COLORS[idx % len(_PATCH_COLORS)]
+        residues_in_patch = [r for r, _, _ in patch]
+        kd_vals = [kd for _, _, kd in patch]
+        in_pocket = [r for r in residues_in_patch if r in pocket_set]
+
+        fig.add_trace(go.Bar(
+            x=residues_in_patch,
+            y=kd_vals,
+            name=f"Patch {idx + 1} ({len(patch)} res)",
+            marker_color=color,
+            opacity=0.85,
+            hovertemplate=(
+                "<b>Residue %{x}</b><br>"
+                "Hydrophobicity: %{y:.1f}<br>"
+                f"Patch {idx + 1}"
+                "<extra></extra>"
+            ),
+        ))
+
+        # Annotate pocket overlaps
+        if in_pocket:
+            for r in in_pocket:
+                kd_val = next((kd for ri, _, kd in patch if ri == r), 0)
+                fig.add_annotation(
+                    x=r, y=kd_val + 0.3,
+                    text="pocket",
+                    showarrow=False,
+                    font=dict(size=8, color="#AF52DE"),
+                )
+
+    # Mark mutation if present
+    if mutation_pos:
+        kd_at_mut = KD.get(
+            next((n for r, n in zip(res_ids, res_names) if r == mutation_pos), ""), 0
+        )
+        fig.add_trace(go.Scatter(
+            x=[mutation_pos], y=[kd_at_mut],
+            mode="markers",
+            marker=dict(size=12, color="#FF3B30", symbol="x", line=dict(width=2)),
+            name=query.mutation or f"Mut {mutation_pos}",
+            hovertemplate=f"<b>{query.mutation or mutation_pos}</b><br>KD: {kd_at_mut:.1f}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        xaxis_title="Residue Number",
+        yaxis_title="Hydrophobicity (KD scale)",
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font_color="#000000",
+        height=320,
+        margin=dict(t=10, b=40, l=50, r=20),
+        barmode="overlay",
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1, font=dict(size=10),
+        ),
+        xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
+        yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Insights
+    for idx, patch in enumerate(patches[:3]):
+        residues_in_patch = [r for r, _, _ in patch]
+        in_pocket = [r for r in residues_in_patch if r in pocket_set]
+        patch_range = f"{min(residues_in_patch)}-{max(residues_in_patch)}"
+
+        if in_pocket:
+            st.success(
+                f"**Patch {idx + 1}** ({len(patch)} residues, {patch_range}) "
+                f"overlaps with {len(in_pocket)} known binding pocket residues — "
+                f"validated drug interaction surface."
+            )
+        elif mutation_pos and mutation_pos in residues_in_patch:
+            st.warning(
+                f"**Patch {idx + 1}** ({len(patch)} residues, {patch_range}) "
+                f"contains the mutation site — mutation may alter surface "
+                f"hydrophobicity and affect protein-protein interactions."
+            )

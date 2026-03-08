@@ -188,7 +188,10 @@ def _deserialize_session(data: dict):
     """Restore session state from a project dict."""
     # Query
     if "parsed_query" in data:
-        st.session_state["parsed_query"] = ProteinQuery(**data["parsed_query"])
+        try:
+            st.session_state["parsed_query"] = ProteinQuery(**data["parsed_query"])
+        except Exception:
+            pass  # Skip if data doesn't match model
     if "raw_query" in data:
         st.session_state["raw_query"] = data["raw_query"]
     if "query_parsed" in data:
@@ -196,30 +199,52 @@ def _deserialize_session(data: dict):
 
     # Prediction result
     if "prediction_result" in data:
-        st.session_state["prediction_result"] = PredictionResult(
-            **data["prediction_result"]
-        )
+        try:
+            st.session_state["prediction_result"] = PredictionResult(
+                **data["prediction_result"]
+            )
+        except Exception:
+            pass
 
     # Trust audit
     if "trust_audit" in data:
-        ta = data["trust_audit"]
-        # Reconstruct RegionConfidence objects
-        if "regions" in ta:
-            ta["regions"] = [RegionConfidence(**r) for r in ta["regions"]]
-        st.session_state["trust_audit"] = TrustAudit(**ta)
+        try:
+            ta = data["trust_audit"].copy()
+            # Reconstruct RegionConfidence objects
+            if "regions" in ta:
+                regions = []
+                for r in ta["regions"]:
+                    try:
+                        regions.append(RegionConfidence(**r))
+                    except Exception:
+                        pass
+                ta["regions"] = regions
+            st.session_state["trust_audit"] = TrustAudit(**ta)
+        except Exception:
+            pass
 
     # Bio context
     if "bio_context" in data:
-        bc = data["bio_context"]
-        if "disease_associations" in bc:
-            bc["disease_associations"] = [
-                DiseaseAssociation(**d) for d in bc["disease_associations"]
-            ]
-        if "drugs" in bc:
-            bc["drugs"] = [DrugCandidate(**d) for d in bc["drugs"]]
-        if "literature" in bc:
-            bc["literature"] = LiteratureSummary(**bc["literature"])
-        st.session_state["bio_context"] = BioContext(**bc)
+        try:
+            bc = data["bio_context"].copy()
+            if "disease_associations" in bc:
+                bc["disease_associations"] = [
+                    DiseaseAssociation(**d) for d in bc["disease_associations"]
+                    if isinstance(d, dict)
+                ]
+            if "drugs" in bc:
+                bc["drugs"] = [
+                    DrugCandidate(**d) for d in bc["drugs"]
+                    if isinstance(d, dict)
+                ]
+            if "literature" in bc:
+                try:
+                    bc["literature"] = LiteratureSummary(**bc["literature"])
+                except Exception:
+                    bc["literature"] = LiteratureSummary()
+            st.session_state["bio_context"] = BioContext(**bc)
+        except Exception:
+            pass
 
     # Interpretation
     if "interpretation" in data:

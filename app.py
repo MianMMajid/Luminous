@@ -54,6 +54,7 @@ def reset_results():
         "sketch_interpretation", "comparison_data",
         "playground_inspiration", "esmfold_pdb",
         "docked_complex_pdb",
+        "_interpretation_attempted",
     ]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
@@ -168,16 +169,16 @@ if st.session_state.get("query_parsed"):
         unsafe_allow_html=True,
     )
 
-# --- Tab Router (Ask Lumi is default/first) ---
+# --- Tab Router (Lumi is default/first) ---
 tab_chat, tab_query, tab_structure, tab_context, tab_report, tab_stats, tab_playground, tab_sketch = st.tabs([
-    "Ask Lumi",
-    "Query",
-    "Structure & Trust",
-    "Biological Context",
-    "Report & Export",
-    "Statistics",
-    "Playground",
-    "Sketch Hypothesis",
+    "Lumi",
+    "Search",
+    "Structure",
+    "Biology",
+    "Report",
+    "Stats",
+    "Workspace",
+    "Sketch",
 ])
 
 with tab_query:

@@ -135,7 +135,8 @@ def _do_parse(text: str, example_data: dict | None = None):
                 "figure_checklist_state", "experiment_tracker",
                 "sketch_image_bytes", "sketch_interpretation",
                 "comparison_data", "playground_inspiration",
-                "esmfold_pdb", "docked_complex_pdb"]:
+                "esmfold_pdb", "docked_complex_pdb",
+                "_interpretation_attempted"]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
     # Clear dynamic caches keyed by protein name or uniprot ID

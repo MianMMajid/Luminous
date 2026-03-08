@@ -9,14 +9,14 @@ def render_context_panel():
     """Tab 3: Biological context and AI interpretation."""
     if not st.session_state.get("query_parsed"):
         st.info(
-            "No query loaded yet. Go to the **Query** tab to enter a protein name, "
+            "No query loaded yet. Go to the **Search** tab to enter a protein name, "
             "mutation, or paste a sequence. Try one of the example queries to get started."
         )
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
     if query is None:
-        st.info("No parsed query found. Go to the **Query** tab to get started.")
+        st.info("No parsed query found. Go to the **Search** tab to get started.")
         return
     bio_context: BioContext | None = st.session_state.get("bio_context")
     interpretation: str | None = st.session_state.get("interpretation")
@@ -35,7 +35,9 @@ def render_context_panel():
         return
 
     # Auto-generate interpretation if context exists but interpretation doesn't
-    if interpretation is None and trust_audit is not None:
+    # Guard with a flag to prevent re-triggering on every rerun
+    if interpretation is None and trust_audit is not None and not st.session_state.get("_interpretation_attempted"):
+        st.session_state["_interpretation_attempted"] = True
         try:
             from src.interpreter import generate_interpretation
             interpretation = generate_interpretation(query, trust_audit, bio_context)
