@@ -1,0 +1,65 @@
+{
+  "narrative": "BRCA1 C61G is a pathogenic missense variant in the RING finger domain that disrupts zinc coordination essential for BRCA1-BARD1 heterodimerization. This variant abolishes E3 ubiquitin ligase activity and impairs homologous recombination DNA repair, conferring high risk of breast and ovarian cancer.",
+  "disease_associations": [
+    {
+      "disease": "Hereditary Breast Cancer",
+      "score": 0.99,
+      "evidence": "ClinVar: Pathogenic"
+    },
+    {
+      "disease": "Hereditary Ovarian Cancer",
+      "score": 0.97,
+      "evidence": "ClinVar: Pathogenic"
+    },
+    {
+      "disease": "Fanconi Anemia",
+      "score": 0.6,
+      "evidence": "Biallelic BRCA1 mutations"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "Olaparib",
+      "phase": "Approved",
+      "mechanism": "PARP inhibitor \u2014 synthetic lethality with BRCA1 deficiency",
+      "source": "FDA"
+    },
+    {
+      "name": "Talazoparib",
+      "phase": "Approved",
+      "mechanism": "PARP inhibitor \u2014 PARP trapping",
+      "source": "FDA"
+    },
+    {
+      "name": "Rucaparib",
+      "phase": "Approved",
+      "mechanism": "PARP inhibitor",
+      "source": "FDA"
+    },
+    {
+      "name": "Niraparib",
+      "phase": "Approved",
+      "mechanism": "PARP inhibitor",
+      "source": "FDA"
+    }
+  ],
+  "literature": {
+    "total_papers": 1256,
+    "recent_papers": 87,
+    "key_findings": [
+      "C61G disrupts zinc binding in RING domain, abolishing BARD1 interaction",
+      "PARP inhibitors show durable responses in BRCA1-mutant cancers",
+      "Structural basis of BRCA1 RING domain function revealed by NMR"
+    ]
+  },
+  "pathways": [
+    "Homologous recombination",
+    "DNA damage response",
+    "Ubiquitin-proteasome pathway"
+  ],
+  "suggested_experiments": [
+    "Validate zinc binding disruption with ICP-MS or atomic absorption",
+    "BARD1 co-immunoprecipitation to confirm loss of interaction",
+    "HR reporter assay (DR-GFP) to measure repair deficiency"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "narrative": "Hemoglobin alpha-1 (HBA1) is a 142-amino acid globin that forms the alpha subunit of adult hemoglobin (alpha2-beta2 tetramer). It binds heme via the proximal histidine (H87) and undergoes cooperative conformational changes (T\u2192R transition) during oxygen binding. Mutations in HBA1 cause alpha-thalassemia and unstable hemoglobin variants.",
+  "disease_associations": [
+    {
+      "disease": "Alpha-Thalassemia",
+      "score": 0.99,
+      "evidence": "HBA1/HBA2 deletions or point mutations"
+    },
+    {
+      "disease": "Hemoglobin H Disease",
+      "score": 0.9,
+      "evidence": "3 of 4 alpha-globin genes deleted"
+    },
+    {
+      "disease": "Hydrops Fetalis",
+      "score": 0.85,
+      "evidence": "All 4 alpha-globin genes deleted (fatal)"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "Hydroxyurea",
+      "phase": "Approved",
+      "mechanism": "Increases fetal hemoglobin (HbF) production",
+      "source": "FDA"
+    },
+    {
+      "name": "Luspatercept",
+      "phase": "Approved",
+      "mechanism": "TGF-beta superfamily ligand trap \u2014 improves erythropoiesis",
+      "source": "FDA"
+    },
+    {
+      "name": "Voxelotor",
+      "phase": "Approved",
+      "mechanism": "HbS polymerization inhibitor (stabilizes oxy-Hb)",
+      "source": "FDA"
+    }
+  ],
+  "literature": {
+    "total_papers": 8200,
+    "recent_papers": 180,
+    "key_findings": [
+      "High-resolution crystal structures reveal cooperative oxygen binding mechanism",
+      "CRISPR-based gene therapy corrects alpha-thalassemia in preclinical models",
+      "Molecular dynamics simulations explain allosteric T\u2192R transition in hemoglobin"
+    ]
+  },
+  "pathways": [
+    "Oxygen transport",
+    "Heme biosynthesis",
+    "Erythropoiesis",
+    "Iron homeostasis"
+  ],
+  "suggested_experiments": [
+    "Oxygen equilibrium curves to measure P50 and Hill coefficient",
+    "Circular dichroism to assess alpha-helix content and stability",
+    "Size-exclusion chromatography to confirm tetramer assembly"
+  ]
+}

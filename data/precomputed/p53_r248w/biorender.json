@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Tumor Suppressor Mutation Impact",
+    "type": "template",
+    "description": "Illustrate how the R248W mutation disrupts p53 DNA binding and tumor suppression",
+    "url": "https://www.biorender.com/template/site-directed-mutagenesis"
+  },
+  {
+    "name": "p53 Signaling Pathway",
+    "type": "template",
+    "description": "Show p53 activation cascade: DNA damage → p53 stabilization → apoptosis/cell cycle arrest",
+    "url": "https://www.biorender.com/template/mapk-signaling-pathway"
+  },
+  {
+    "name": "Protein-DNA Interaction",
+    "type": "template",
+    "description": "Visualize p53 tetramer binding to DNA response element with mutation site highlighted",
+    "url": "https://www.biorender.com/template/protein-protein-interaction-ppi-network"
+  },
+  {
+    "name": "Drug Discovery Pipeline",
+    "type": "template",
+    "description": "Show drug development stages from p53 target identification to clinical trials",
+    "url": "https://www.biorender.com/template/drug-discovery-development-funnel"
+  },
+  {
+    "name": "Protein Structure Comparison",
+    "type": "template",
+    "description": "Side-by-side wild-type vs mutant structure with key conformational changes",
+    "url": "https://www.biorender.com/template/protein-structure"
+  },
+  {
+    "name": "Mutation & Cancer Icons",
+    "type": "icon",
+    "description": "Icons for mutations, apoptosis, proliferation, genomic instability",
+    "url": "https://www.biorender.com/library?q=mutation+cancer"
+  }
+]

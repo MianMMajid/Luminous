@@ -1,0 +1,73 @@
+{
+  "narrative": "Human insulin (INS) is a peptide hormone produced by pancreatic beta cells that regulates glucose homeostasis. The mature hormone is a 51-amino acid heterodimer of A-chain (21 aa) and B-chain (30 aa) linked by disulfide bonds. Insulin binds the insulin receptor (INSR) tyrosine kinase to activate PI3K-AKT and RAS-MAPK signaling, promoting glucose uptake and glycogen synthesis.",
+  "disease_associations": [
+    {
+      "disease": "Type 1 Diabetes Mellitus",
+      "score": 0.99,
+      "evidence": "Autoimmune destruction of beta cells"
+    },
+    {
+      "disease": "Type 2 Diabetes Mellitus",
+      "score": 0.95,
+      "evidence": "Insulin resistance and relative deficiency"
+    },
+    {
+      "disease": "Neonatal Diabetes",
+      "score": 0.8,
+      "evidence": "INS gene mutations (e.g., C96Y)"
+    },
+    {
+      "disease": "Hyperinsulinism",
+      "score": 0.7,
+      "evidence": "Gain-of-function INS mutations"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "Insulin Lispro",
+      "phase": "Approved",
+      "mechanism": "Rapid-acting insulin analog (B28-B29 swap)",
+      "source": "FDA"
+    },
+    {
+      "name": "Insulin Glargine",
+      "phase": "Approved",
+      "mechanism": "Long-acting basal insulin (A21G, B31R, B32R)",
+      "source": "FDA"
+    },
+    {
+      "name": "Insulin Detemir",
+      "phase": "Approved",
+      "mechanism": "Long-acting insulin with fatty acid acylation",
+      "source": "FDA"
+    },
+    {
+      "name": "Tirzepatide",
+      "phase": "Approved",
+      "mechanism": "Dual GIP/GLP-1 receptor agonist",
+      "source": "FDA"
+    }
+  ],
+  "literature": {
+    "total_papers": 12450,
+    "recent_papers": 340,
+    "key_findings": [
+      "Cryo-EM structure of insulin bound to full-length insulin receptor reveals asymmetric binding",
+      "Ultra-rapid insulin analogs achieve faster onset through reduced self-association",
+      "Smart insulin concepts using glucose-responsive polymers show promise in preclinical models",
+      "Oral insulin delivery via nanoparticle encapsulation advancing through Phase II trials"
+    ]
+  },
+  "pathways": [
+    "Insulin signaling pathway",
+    "PI3K-AKT signaling",
+    "Glucose metabolism",
+    "MAPK/ERK cascade",
+    "mTOR signaling"
+  ],
+  "suggested_experiments": [
+    "Circular dichroism to assess structural integrity of insulin formulations",
+    "SPR to measure insulin-INSR binding kinetics",
+    "Cell-based glucose uptake assay to validate functional activity"
+  ]
+}

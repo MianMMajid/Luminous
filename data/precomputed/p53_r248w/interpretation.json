@@ -1,0 +1,4 @@
+{
+  "text": "## Structure Prediction Summary for TP53\n\n**Overall Confidence:** medium (78.0%)\n\n**Mutation:** R248W\n\nTP53 (tumor protein p53) is the most frequently mutated gene in human cancers, with R248W being one of the six hotspot mutations in the DNA-binding domain. This gain-of-function mutation disrupts DNA binding and confers oncogenic properties. R248W is found in approximately 7.2% of TP53-mutant cancers.\n\nTherapeutic options include APR-246 (Eprenetapopt), PC14586 (Rezatapopt), PRIMA-1.\n\n*Pre-generated interpretation for demo resilience.*",
+  "model": "fallback"
+}

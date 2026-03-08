@@ -1,0 +1,23 @@
+{
+  "variants": [
+    {"position": 719, "name": "G719S", "significance": "pathogenic", "disease": "Non-small cell lung cancer", "cadd_score": 25.3},
+    {"position": 719, "name": "G719A", "significance": "pathogenic", "disease": "Non-small cell lung cancer"},
+    {"position": 746, "name": "E746_A750del", "significance": "pathogenic", "disease": "Non-small cell lung cancer"},
+    {"position": 790, "name": "T790M", "significance": "pathogenic", "disease": "Non-small cell lung cancer - drug resistance", "cadd_score": 29.1},
+    {"position": 858, "name": "L858R", "significance": "pathogenic", "disease": "Non-small cell lung cancer", "cadd_score": 27.8},
+    {"position": 861, "name": "L861Q", "significance": "pathogenic", "disease": "Non-small cell lung cancer"},
+    {"position": 797, "name": "C797S", "significance": "pathogenic", "disease": "EGFR TKI resistance"},
+    {"position": 792, "name": "L792F", "significance": "likely_pathogenic", "disease": "Acquired resistance to osimertinib"}
+  ],
+  "summary": "Found 8 annotated variants for EGFR. 7 pathogenic, 1 likely pathogenic. T790M is the classic gatekeeper mutation conferring resistance to first-generation EGFR TKIs (gefitinib, erlotinib). C797S confers resistance to third-generation TKIs (osimertinib).",
+  "pathogenic_positions": {
+    "719": ["G719S", "G719A"],
+    "790": ["T790M"],
+    "797": ["C797S"],
+    "858": ["L858R"],
+    "861": ["L861Q"]
+  },
+  "total": 8,
+  "pathogenic_count": 7,
+  "likely_pathogenic_count": 1
+}

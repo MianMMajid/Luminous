@@ -1,0 +1,80 @@
+{
+  "narrative": "TP53 (tumor protein p53) is the most frequently mutated gene in human cancers, with R248W being one of the six hotspot mutations in the DNA-binding domain. This gain-of-function mutation disrupts DNA binding and confers oncogenic properties. R248W is found in approximately 7.2% of TP53-mutant cancers.",
+  "disease_associations": [
+    {
+      "disease": "Li-Fraumeni Syndrome",
+      "score": 0.99,
+      "evidence": "Germline TP53 mutations"
+    },
+    {
+      "disease": "Breast Cancer",
+      "score": 0.95,
+      "evidence": "Somatic hotspot mutation"
+    },
+    {
+      "disease": "Colorectal Cancer",
+      "score": 0.92,
+      "evidence": "Frequent somatic mutation"
+    },
+    {
+      "disease": "Lung Adenocarcinoma",
+      "score": 0.9,
+      "evidence": "Driver mutation"
+    },
+    {
+      "disease": "Ovarian Cancer",
+      "score": 0.88,
+      "evidence": "High-frequency somatic mutation"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "APR-246 (Eprenetapopt)",
+      "phase": "Phase III",
+      "mechanism": "Reactivates mutant p53 by restoring wild-type conformation",
+      "source": "ClinicalTrials.gov"
+    },
+    {
+      "name": "PC14586 (Rezatapopt)",
+      "phase": "Phase II",
+      "mechanism": "Selective Y220C p53 reactivator",
+      "source": "PMC"
+    },
+    {
+      "name": "PRIMA-1",
+      "phase": "Phase I",
+      "mechanism": "Converts to methylene quinuclidinone, binds cysteine residues in p53 core domain",
+      "source": "PubMed"
+    },
+    {
+      "name": "Arsenic Trioxide",
+      "phase": "Phase II",
+      "mechanism": "Stabilizes p53 folding via zinc coordination",
+      "source": "PMC"
+    }
+  ],
+  "literature": {
+    "total_papers": 3847,
+    "recent_papers": 142,
+    "key_findings": [
+      "R248W p53 exhibits gain-of-function oncogenic activity beyond loss of tumor suppression",
+      "Structural studies reveal R248W disrupts DNA minor groove interactions",
+      "Combination of APR-246 with cisplatin shows synergistic effects in ovarian cancer",
+      "Cryo-EM structures reveal allosteric mechanisms of p53 reactivation compounds",
+      "Machine learning models predict drug sensitivity based on p53 mutation status"
+    ]
+  },
+  "pathways": [
+    "p53 signaling pathway",
+    "Apoptosis",
+    "Cell cycle arrest",
+    "DNA damage response",
+    "Senescence"
+  ],
+  "suggested_experiments": [
+    "Thermal shift assay (DSF) to validate R248W impact on protein stability",
+    "HDX-MS to map conformational changes induced by R248W",
+    "Co-crystallization with APR-246 metabolite to validate binding mode",
+    "Cellular assays for p53 transcriptional activity restoration"
+  ]
+}

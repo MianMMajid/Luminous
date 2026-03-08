@@ -1,0 +1,55 @@
+[
+  {
+    "label": "TP53 R248W (Cancer Hotspot)",
+    "query": "P53 R248W mutation - is it druggable?",
+    "protein_name": "TP53",
+    "uniprot_id": "P04637",
+    "mutation": "R248W",
+    "question_type": "druggability",
+    "sequence": "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGPDEAPRMPEAAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYPQGLNGTVNLPGRNSFEVWVCACPHERRCPHERCTEGVAPPQHLIRVEGNLHAQSVDRKQHASVFVLNLPLSQAMDDLMLSPDDIEQWFTEDPGP"
+  },
+  {
+    "label": "BRCA1 C61G (Breast Cancer)",
+    "query": "BRCA1 C61G variant - what's the structural impact?",
+    "protein_name": "BRCA1",
+    "uniprot_id": "P38398",
+    "mutation": "C61G",
+    "question_type": "mutation_impact",
+    "sequence": "MDLSALRVEEVQNVINAMQKILECPICLELIKEPVSTKCDHIFCKFCMLKLLNQKKGPSQCPLCKNDITKRSLQESTRFSQLVEELLKIICAFQLDTGLEYANSYNFAKK"
+  },
+  {
+    "label": "EGFR T790M (Drug Resistance)",
+    "query": "EGFR T790M resistance mutation with gefitinib binding",
+    "protein_name": "EGFR",
+    "uniprot_id": "P00533",
+    "mutation": "T790M",
+    "interaction_partner": "gefitinib",
+    "question_type": "binding",
+    "sequence": "GEAPNQALLRILKETEFKKIKVLGSGAFGTVYKGLWIPEGEKVKIPVAIKELREATSPKANKEILDEAYVMASVDNPHVCRLLGICLTSTVQLITQLMPFGCLLDYVREHKDNIGSQYLLNWCVQIAKGMNYLEDRRLVHRDLAARNVLVKTPQHVKITDFGLAKLLGAEEKEYHAEGGKVPIKWMALESILHRIYTHQSDVWSYGVTVWELMTFGSKPYDGIPASEISSILEKGERLPQPPICTIDVYMIMVKCWMIDADSRPKFRELIIEFSKMARDPQRYLVIQGDERMHLPSPTDSNFYRALMDEEDMDDVVDADEYLIPQQG"
+  },
+  {
+    "label": "Insulin Structure",
+    "query": "Show me the structure of human insulin and explain its function",
+    "protein_name": "INS",
+    "uniprot_id": "P01308",
+    "question_type": "structure",
+    "sequence": "MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAEDLQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN"
+  },
+  {
+    "label": "SARS-CoV-2 Spike RBD",
+    "query": "SARS-CoV-2 spike protein receptor binding domain - how does it bind ACE2?",
+    "protein_name": "SPIKE",
+    "uniprot_id": "P0DTC2",
+    "interaction_partner": "ACE2",
+    "question_type": "binding",
+    "sequence": "RVQPTESIVRFPNITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKSTNLVKNKCVNF"
+  },
+  {
+    "label": "Hemoglobin Alpha (Thalassemia)",
+    "query": "HBA1 hemoglobin alpha subunit - structural basis of alpha-thalassemia",
+    "protein_name": "HBA1",
+    "uniprot_id": "P69905",
+    "question_type": "structure",
+    "sequence": "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNALSALSDLHAHKLRVDPVNFKLLSHCLLVTLAAHLPAEFTPAVHASLDKFLASVSTVLTSKYR"
+  }
+]

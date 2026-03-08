@@ -1,0 +1,4 @@
+{
+  "text": "## Structure Prediction Summary for BRCA1\n\n**Overall Confidence:** high (82.0%)\n\n**Mutation:** C61G\n\nBRCA1 C61G is a pathogenic missense variant in the RING finger domain that disrupts zinc coordination essential for BRCA1-BARD1 heterodimerization. This variant abolishes E3 ubiquitin ligase activity and impairs homologous recombination DNA repair, conferring high risk of breast and ovarian cancer.\n\nTherapeutic options include Olaparib, Talazoparib, Rucaparib.\n\n*Pre-generated interpretation for demo resilience.*",
+  "model": "fallback"
+}

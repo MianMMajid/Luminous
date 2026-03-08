@@ -1,0 +1,20 @@
+{
+  "delta_g": -8.7,
+  "kd": 2.4e-7,
+  "ic50": 240.0,
+  "affinity_confidence": 0.72,
+  "rank_score": 0.85,
+  "note": "T790M gatekeeper mutation reduces gefitinib binding affinity ~100x compared to wild-type (WT Kd ~2nM). This is consistent with clinical resistance data.",
+  "poses": [
+    {
+      "name": "Pose 1 (ATP-competitive)",
+      "delta_g": -8.7,
+      "confidence": 0.72
+    },
+    {
+      "name": "Pose 2 (Allosteric)",
+      "delta_g": -5.2,
+      "confidence": 0.41
+    }
+  ]
+}

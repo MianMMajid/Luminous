@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Insulin Signaling Pathway",
+    "type": "template",
+    "description": "Insulin receptor → IRS-1 → PI3K/AKT pathway for glucose uptake and metabolism",
+    "url": "https://www.biorender.com/template/mtor-signaling-pathway"
+  },
+  {
+    "name": "Insulin Structure & Processing",
+    "type": "template",
+    "description": "Preproinsulin → proinsulin → mature insulin (A+B chains linked by disulfide bonds)",
+    "url": "https://www.biorender.com/template/protein-structure"
+  },
+  {
+    "name": "Protein-Protein Interaction",
+    "type": "template",
+    "description": "Insulin binding induces receptor dimerization and autophosphorylation cascade",
+    "url": "https://www.biorender.com/template/protein-protein-interaction-ppi-network"
+  },
+  {
+    "name": "Mechanism of Action",
+    "type": "template",
+    "description": "Compare Type 1 (autoimmune beta cell destruction) vs Type 2 (insulin resistance)",
+    "url": "https://www.biorender.com/template/daptomycin-mechanism-of-action"
+  },
+  {
+    "name": "Endocrine & Cell Biology Icons",
+    "type": "icon",
+    "description": "Icons for beta cells, islets of Langerhans, glucose transporters, insulin granules",
+    "url": "https://www.biorender.com/library?q=insulin+cell"
+  }
+]

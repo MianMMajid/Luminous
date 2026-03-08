@@ -1,0 +1,4 @@
+{
+  "text": "## Structure Prediction Summary for INS\n\n**Overall Confidence:** high (88.0%)\n\nHuman insulin (INS) is a peptide hormone produced by pancreatic beta cells that regulates glucose homeostasis. The mature hormone is a 51-amino acid heterodimer of A-chain (21 aa) and B-chain (30 aa) linked by disulfide bonds. Insulin binds the insulin receptor (INSR) tyrosine kinase to activate PI3K-AKT and RAS-MAPK signaling, promoting glucose uptake and glycogen synthesis.\n\nTherapeutic options include Insulin Lispro, Insulin Glargine, Insulin Detemir.\n\n*Pre-generated interpretation for demo resilience.*",
+  "model": "fallback"
+}

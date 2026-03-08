@@ -1,0 +1,84 @@
+{
+  "boltz2": {
+    "general": [
+      {
+        "id": "false_positive_rate",
+        "description": "Boltz-2 has ~40% false positive rate for protein-ligand binding poses",
+        "severity": "high",
+        "source": "Wohlwend et al. 2025, Table 3"
+      },
+      {
+        "id": "flexible_loops",
+        "description": "Intrinsically disordered regions and flexible loops are poorly modeled",
+        "severity": "high",
+        "source": "Known limitation of all structure prediction methods"
+      },
+      {
+        "id": "no_water_metals",
+        "description": "Water molecules and metal ion coordination are not reliably predicted",
+        "severity": "medium",
+        "source": "Boltz-2 documentation"
+      },
+      {
+        "id": "ligand_atom_limit",
+        "description": "Ligands limited to 128 non-hydrogen atoms",
+        "severity": "medium",
+        "source": "Boltz-2 documentation"
+      },
+      {
+        "id": "single_conformation",
+        "description": "Predicts single static conformation; proteins are dynamic in reality",
+        "severity": "medium",
+        "source": "Fundamental limitation of structure prediction"
+      },
+      {
+        "id": "multimer_reliability",
+        "description": "Complex (multimer) predictions are less reliable than single-chain",
+        "severity": "medium",
+        "source": "Lower iPTM scores for multimers vs monomers"
+      },
+      {
+        "id": "post_translational",
+        "description": "Post-translational modifications (glycosylation, phosphorylation) not modeled",
+        "severity": "medium",
+        "source": "Not in training data"
+      },
+      {
+        "id": "membrane_context",
+        "description": "Membrane protein predictions lack lipid bilayer context",
+        "severity": "low",
+        "source": "No membrane environment in prediction"
+      }
+    ],
+    "confidence_thresholds": {
+      "very_high": {"min_plddt": 90, "description": "Backbone likely well-modeled"},
+      "high": {"min_plddt": 70, "description": "Generally reliable for backbone"},
+      "low": {"min_plddt": 50, "description": "Caution: may be disordered or poorly modeled"},
+      "very_low": {"min_plddt": 0, "description": "Likely disordered or wrong; do not interpret"}
+    },
+    "training_bias": {
+      "description": "Boltz-2 trained primarily on PDB structures, which over-represent well-studied proteins",
+      "well_studied_proteins": ["TP53", "EGFR", "BRCA1", "insulin", "hemoglobin"],
+      "note": "Predictions for well-studied proteins benefit from more training data but may overfit to known conformations"
+    }
+  },
+  "alphafold": {
+    "general": [
+      {
+        "id": "conformational_sampling",
+        "description": "AlphaFold2/3 tends to predict a single dominant conformation",
+        "severity": "medium"
+      },
+      {
+        "id": "protein_protein",
+        "description": "Protein-protein interface predictions less reliable than core structure",
+        "severity": "medium"
+      }
+    ]
+  },
+  "mutation_specific": {
+    "gain_of_function": "Gain-of-function mutations may not show structural changes detectable by prediction",
+    "allosteric": "Allosteric effects are not captured by static structure prediction",
+    "stability": "Predicted structures do not directly indicate thermodynamic stability changes"
+  }
+}

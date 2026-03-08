@@ -1,0 +1,1018 @@
+"""Multi-layer residue dashboard -- genome-browser-style strip chart.
+
+Shows all per-residue properties in aligned horizontal tracks:
+1. pLDDT confidence (blue gradient)
+2. SASA -- solvent accessibility (orange)
+3. Secondary structure (categorical color blocks)
+4. Packing density (purple)
+5. Network centrality (green)
+6. Known variants (red dots from ClinVar)
+7. B-factor / flexibility (if available)
+
+All tracks share the same X axis (residue number) with synchronized zoom/pan.
+Mutation site highlighted with a vertical line across all tracks.
+"""
+from __future__ import annotations
+
+import re
+
+import plotly.graph_objects as go
+import streamlit as st
+from plotly.subplots import make_subplots
+
+from src.models import ProteinQuery
+
+# ---------------------------------------------------------------------------
+# Track metadata: name, color scheme, y-axis label
+# ---------------------------------------------------------------------------
+_TRACK_DEFS: list[dict] = [
+    {"key": "plddt", "label": "pLDDT Confidence",
+     "yaxis": "pLDDT", "color": "#007AFF"},
+    {"key": "alphamissense", "label": "AlphaMissense",
+     "yaxis": "AM Score", "color": "#DC3232"},
+    {"key": "domains", "label": "Domain Architecture",
+     "yaxis": "Domain", "color": "#457B9D"},
+    {"key": "sasa", "label": "SASA (Accessibility)",
+     "yaxis": "SASA (A^2)", "color": "#FF9500"},
+    {"key": "secondary_structure", "label": "Secondary Structure",
+     "yaxis": "SS", "color": "#FFC800"},
+    {"key": "packing", "label": "Packing Density",
+     "yaxis": "Neighbors", "color": "#AF52DE"},
+    {"key": "centrality", "label": "Network Centrality",
+     "yaxis": "Centrality", "color": "#32D74B"},
+    {"key": "variants", "label": "Pathogenic Variants",
+     "yaxis": "Variant", "color": "#E00000"},
+    {"key": "bfactor", "label": "B-factor / Flexibility",
+     "yaxis": "B-factor", "color": "#AC8E68"},
+]
+
+# Secondary structure color map (Mol* standard)
+_SS_COLORS = {"a": "#FF0080", "b": "#FFC800", "c": "#808080"}
+_SS_LABELS = {"a": "α-Helix", "b": "β-Sheet", "c": "Coil"}
+
+
+def render_residue_dashboard(
+    structure_analysis: dict,
+    plddt_scores: list,
+    query: ProteinQuery,
+    variant_data: dict | None = None,
+) -> None:
+    """Render a genome-browser-style multi-track residue dashboard.
+
+    Parameters
+    ----------
+    structure_analysis : dict
+        Output of ``analyze_structure()`` -- per-residue SASA, SSE, packing,
+        centrality, contact maps, etc.
+    plddt_scores : list
+        Per-residue pLDDT confidence scores (0-100).
+    query : ProteinQuery
+        Parsed protein query with optional mutation field.
+    variant_data : dict | None
+        ClinVar / pathogenic variant data.  Expected shape:
+        ``{"pathogenic_positions": {pos_int: [variant_names]}}``
+    """
+    st.markdown("### Residue Property Dashboard")
+    st.caption(
+        "Genome-browser-style multi-track view of per-residue properties. "
+        "All tracks share a synchronized x-axis -- zoom or pan to explore."
+    )
+
+    residue_ids: list[int] = structure_analysis.get("residue_ids", [])
+    if not residue_ids:
+        st.info("No residue data available for the dashboard.")
+        return
+
+    # Parse mutation position
+    mutation_pos: int | None = _parse_mutation_pos(query.mutation)
+
+    # Normalize variant data
+    pathogenic_positions: dict[int, list[str]] = {}
+    if variant_data and variant_data.get("pathogenic_positions"):
+        for pos_key, names in variant_data["pathogenic_positions"].items():
+            try:
+                pathogenic_positions[int(pos_key)] = (
+                    names if isinstance(names, list) else [str(names)]
+                )
+            except (ValueError, TypeError):
+                pass
+
+    # ---- Track selector ----
+    available_tracks = _detect_available_tracks(
+        structure_analysis, plddt_scores, pathogenic_positions
+    )
+    all_labels = [t["label"] for t in _TRACK_DEFS if t["key"] in available_tracks]
+
+    selected_labels = st.multiselect(
+        "Tracks to display",
+        options=all_labels,
+        default=all_labels,
+        key="residue_dashboard_tracks",
+        help="Select which data tracks to show. Deselect tracks to simplify the view.",
+    )
+
+    # Map selected labels back to keys
+    label_to_key = {t["label"]: t["key"] for t in _TRACK_DEFS}
+    selected_keys = [label_to_key[lbl] for lbl in selected_labels if lbl in label_to_key]
+
+    if not selected_keys:
+        st.info("Select at least one track to display.")
+        return
+
+    # ---- Build figure ----
+    fig = _build_dashboard_figure(
+        residue_ids=residue_ids,
+        plddt_scores=plddt_scores,
+        structure_analysis=structure_analysis,
+        selected_keys=selected_keys,
+        mutation_pos=mutation_pos,
+        pathogenic_positions=pathogenic_positions,
+    )
+
+    st.plotly_chart(fig, use_container_width=True, key="residue_dashboard_chart")
+
+    # ---- Residue Insights callout ----
+    _render_residue_insights(
+        residue_ids=residue_ids,
+        plddt_scores=plddt_scores,
+        structure_analysis=structure_analysis,
+        mutation_pos=mutation_pos,
+        pathogenic_positions=pathogenic_positions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Figure construction
+# ---------------------------------------------------------------------------
+
+
+@st.cache_data(show_spinner="Building residue dashboard...")
+def _build_dashboard_figure(
+    residue_ids: list[int],
+    plddt_scores: list,
+    structure_analysis: dict,
+    selected_keys: list[str],
+    mutation_pos: int | None,
+    pathogenic_positions: dict[int, list[str]],
+) -> go.Figure:
+    """Construct the multi-track Plotly figure."""
+    n_tracks = len(selected_keys)
+    track_defs = [t for t in _TRACK_DEFS if t["key"] in selected_keys]
+
+    # Compute row heights: give secondary structure + variant tracks less height
+    row_heights = []
+    for td in track_defs:
+        if td["key"] in ("secondary_structure", "variants", "domains"):
+            row_heights.append(0.6)
+        else:
+            row_heights.append(1.0)
+
+    fig = make_subplots(
+        rows=n_tracks,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.02,
+        row_heights=row_heights,
+        subplot_titles=[td["label"] for td in track_defs],
+    )
+
+    # Precompute a hover-text array that combines ALL properties per residue
+    hover_map = _build_hover_map(
+        residue_ids, plddt_scores,
+        structure_analysis, pathogenic_positions,
+    )
+
+    for row_idx, td in enumerate(track_defs, start=1):
+        key = td["key"]
+
+        if key == "plddt":
+            _add_plddt_track(fig, row_idx, residue_ids, plddt_scores, hover_map)
+        elif key == "alphamissense":
+            _add_alphamissense_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "domains":
+            _add_domain_track(fig, row_idx, residue_ids, hover_map)
+        elif key == "sasa":
+            _add_sasa_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+        elif key == "secondary_structure":
+            _add_ss_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+        elif key == "packing":
+            _add_packing_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+        elif key == "centrality":
+            _add_centrality_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+        elif key == "variants":
+            _add_variant_track(fig, row_idx, residue_ids, pathogenic_positions, hover_map)
+        elif key == "bfactor":
+            _add_bfactor_track(fig, row_idx, residue_ids, structure_analysis, hover_map)
+
+        # Y-axis label
+        fig.update_yaxes(
+            title_text=td["yaxis"],
+            row=row_idx,
+            col=1,
+            title_font=dict(size=10, color="rgba(60,60,67,0.6)"),
+            tickfont=dict(size=9, color="rgba(60,60,67,0.4)"),
+            gridcolor="rgba(0,0,0,0.08)",
+            zeroline=False,
+        )
+
+    # ---- Mutation site vertical line across ALL tracks ----
+    if mutation_pos is not None and mutation_pos in residue_ids:
+        for row_idx in range(1, n_tracks + 1):
+            fig.add_vline(
+                x=mutation_pos,
+                line_width=2,
+                line_dash="dash",
+                line_color="#FF3B30",
+                opacity=0.7,
+                row=row_idx,
+                col=1,
+                annotation=dict(text="") if row_idx > 1 else None,
+            )
+        # Add a single annotation at the top
+        fig.add_annotation(
+            x=mutation_pos,
+            y=1.0,
+            yref=f"y{1 if n_tracks == 1 else ''} domain",
+            xref="x",
+            text=f"Pos {mutation_pos}",
+            showarrow=True,
+            arrowhead=2,
+            arrowcolor="#FF3B30",
+            font=dict(color="#FF3B30", size=11, family="monospace"),
+            bgcolor="rgba(255,69,58,0.15)",
+            bordercolor="#FF3B30",
+            borderwidth=1,
+            borderpad=3,
+        )
+
+    # ---- Global layout ----
+    total_height = max(400, int(120 * n_tracks + 80))
+    total_height = min(total_height, 900)
+
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=total_height,
+        margin=dict(t=30, b=40, l=60, r=20),
+        showlegend=False,
+        font=dict(family="Inter, system-ui, sans-serif"),
+    )
+
+    # X-axis on the bottom-most subplot only
+    fig.update_xaxes(
+        title_text="Residue Number",
+        row=n_tracks,
+        col=1,
+        title_font=dict(size=11, color="rgba(60,60,67,0.6)"),
+        tickfont=dict(size=9, color="rgba(60,60,67,0.4)"),
+        gridcolor="rgba(0,0,0,0.08)",
+    )
+
+    # Style all subplot titles
+    for ann in fig.layout.annotations:
+        ann.update(font=dict(size=11, color="rgba(60,60,67,0.5)"), x=0.01, xanchor="left")
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Individual track builders
+# ---------------------------------------------------------------------------
+
+
+def _add_plddt_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    plddt_scores: list,
+    hover_map: dict[int, str],
+) -> None:
+    if not plddt_scores:
+        return
+    # Ensure alignment and numeric types
+    scores = [
+        float(s) for s in plddt_scores[: len(residue_ids)]
+        if isinstance(s, (int, float))
+    ]
+    rids = residue_ids[: len(scores)]
+    if not rids:
+        return
+
+    # Color-code each point by pLDDT tier
+    colors = []
+    for s in scores:
+        if s >= 90:
+            colors.append("#0053D6")
+        elif s >= 70:
+            colors.append("#65CBF3")
+        elif s >= 50:
+            colors.append("#FFDB13")
+        else:
+            colors.append("#FF7D45")
+
+    fig.add_trace(
+        go.Bar(
+            x=rids,
+            y=scores,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in rids],
+            hoverinfo="text",
+            name="pLDDT",
+        ),
+        row=row,
+        col=1,
+    )
+    fig.update_yaxes(range=[0, 100], row=row, col=1)
+
+
+def _add_alphamissense_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    hover_map: dict[int, str],
+) -> None:
+    """AlphaMissense pathogenicity scores as a colored bar chart."""
+    am_data = _get_current_am_data()
+    if not am_data:
+        return
+
+    from src.alphamissense import get_pathogenicity_color
+
+    residue_scores = am_data["residue_scores"]
+    vals = [residue_scores.get(r, 0.0) for r in residue_ids]
+    colors = [get_pathogenicity_color(v) for v in vals]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids,
+            y=vals,
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="AlphaMissense",
+        ),
+        row=row,
+        col=1,
+    )
+    # Threshold lines
+    fig.add_hline(
+        y=0.564, line_dash="dot", line_color="rgba(220,50,50,0.4)",
+        row=row, col=1,
+        annotation_text="pathogenic",
+        annotation_font=dict(size=8, color="rgba(220,50,50,0.5)"),
+        annotation_position="top right",
+    )
+    fig.add_hline(
+        y=0.34, line_dash="dot", line_color="rgba(69,123,157,0.4)",
+        row=row, col=1,
+        annotation_text="benign",
+        annotation_font=dict(size=8, color="rgba(69,123,157,0.5)"),
+        annotation_position="top right",
+    )
+    fig.update_yaxes(range=[0, 1.05], row=row, col=1)
+
+
+def _add_domain_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    hover_map: dict[int, str],
+) -> None:
+    """Domain architecture as colored blocks (like secondary structure)."""
+    dom_data = _get_current_domain_data()
+    if not dom_data:
+        return
+
+    domains = dom_data["domains"]
+
+    # Build residue→color map
+    res_colors: dict[int, str] = {}
+    for d in domains:
+        for pos in range(d["start"], d["end"] + 1):
+            res_colors[pos] = d["color"]
+
+    colors = [
+        res_colors.get(r, "rgba(0,0,0,0.05)")
+        for r in residue_ids
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids,
+            y=[1] * len(residue_ids),
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="Domains",
+        ),
+        row=row,
+        col=1,
+    )
+    fig.update_yaxes(
+        range=[0, 1.2], showticklabels=False,
+        row=row, col=1,
+    )
+
+
+def _add_sasa_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    analysis: dict,
+    hover_map: dict[int, str],
+) -> None:
+    sasa = analysis.get("sasa_per_residue", {})
+    if not sasa:
+        return
+
+    vals = [sasa.get(r, 0.0) for r in residue_ids]
+
+    fig.add_trace(
+        go.Scatter(
+            x=residue_ids,
+            y=vals,
+            mode="lines",
+            line=dict(color="#FF9500", width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(255,149,0,0.15)",
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="SASA",
+        ),
+        row=row,
+        col=1,
+    )
+    # Add buried threshold line
+    fig.add_hline(
+        y=25.0,
+        line_dash="dot",
+        line_color="rgba(255,149,0,0.3)",
+        row=row,
+        col=1,
+        annotation_text="buried/exposed",
+        annotation_font=dict(size=8, color="rgba(255,149,0,0.4)"),
+        annotation_position="top right",
+    )
+
+
+def _add_ss_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    analysis: dict,
+    hover_map: dict[int, str],
+) -> None:
+    """Secondary structure as colored blocks (helix / sheet / coil)."""
+    sse = analysis.get("sse_per_residue", {})
+    if not sse:
+        return
+
+    # Encode as numeric: helix=2, sheet=1, coil=0
+    ss_map = {"a": 2, "b": 1, "c": 0}
+    y_vals = []
+    colors = []
+    labels = []
+    for r in residue_ids:
+        ss = str(sse.get(r, "c")).strip()
+        if ss not in ss_map:
+            ss = "c"
+        y_vals.append(ss_map[ss])
+        colors.append(_SS_COLORS[ss])
+        labels.append(_SS_LABELS[ss])
+
+    fig.add_trace(
+        go.Bar(
+            x=residue_ids,
+            y=[1] * len(residue_ids),  # uniform height
+            marker=dict(color=colors, line=dict(width=0)),
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="SS",
+        ),
+        row=row,
+        col=1,
+    )
+    fig.update_yaxes(
+        range=[0, 1.2],
+        showticklabels=False,
+        row=row,
+        col=1,
+    )
+
+
+def _add_packing_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    analysis: dict,
+    hover_map: dict[int, str],
+) -> None:
+    packing = analysis.get("packing_density", {})
+    if not packing:
+        return
+    vals = [packing.get(r, 0) for r in residue_ids]
+
+    fig.add_trace(
+        go.Scatter(
+            x=residue_ids,
+            y=vals,
+            mode="lines",
+            line=dict(color="#AF52DE", width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(175,82,222,0.12)",
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="Packing",
+        ),
+        row=row,
+        col=1,
+    )
+
+
+def _add_centrality_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    analysis: dict,
+    hover_map: dict[int, str],
+) -> None:
+    centrality = analysis.get("network_centrality", {})
+    if not centrality:
+        return
+    vals = [centrality.get(r, 0.0) for r in residue_ids]
+
+    fig.add_trace(
+        go.Scatter(
+            x=residue_ids,
+            y=vals,
+            mode="lines",
+            line=dict(color="#32D74B", width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(50,215,75,0.12)",
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="Centrality",
+        ),
+        row=row,
+        col=1,
+    )
+
+    # Mark hub residues
+    hubs = analysis.get("hub_residues", [])
+    if hubs:
+        hub_x = [h["residue"] for h in hubs if h["residue"] in set(residue_ids)]
+        hub_y = [centrality.get(h["residue"], 0) for h in hubs if h["residue"] in set(residue_ids)]
+        fig.add_trace(
+            go.Scatter(
+                x=hub_x,
+                y=hub_y,
+                mode="markers",
+                marker=dict(
+                    symbol="diamond",
+                    size=7,
+                    color="#32D74B",
+                    line=dict(width=1, color="#000000"),
+                ),
+                hovertext=[f"Hub residue {x}" for x in hub_x],
+                hoverinfo="text",
+                name="Hub",
+            ),
+            row=row,
+            col=1,
+        )
+
+
+def _add_variant_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    pathogenic_positions: dict[int, list[str]],
+    hover_map: dict[int, str],
+) -> None:
+    """Show pathogenic variant positions as red triangles on a flat baseline."""
+    # Baseline: zero line for all residues
+    fig.add_trace(
+        go.Scatter(
+            x=[residue_ids[0], residue_ids[-1]] if residue_ids else [],
+            y=[0, 0],
+            mode="lines",
+            line=dict(color="rgba(0,0,0,0.08)", width=1),
+            hoverinfo="skip",
+            name="_baseline",
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+
+    if pathogenic_positions:
+        var_x = sorted(p for p in pathogenic_positions if p in set(residue_ids))
+        var_y = [1] * len(var_x)
+        hover_texts = []
+        for p in var_x:
+            names = pathogenic_positions[p]
+            name_str = ", ".join(names) if isinstance(names, list) else str(names)
+            hover_texts.append(
+                f"Residue {p}<br>Pathogenic: {name_str}"
+            )
+
+        fig.add_trace(
+            go.Scatter(
+                x=var_x,
+                y=var_y,
+                mode="markers",
+                marker=dict(
+                    symbol="triangle-up",
+                    size=10,
+                    color="#E00000",
+                    line=dict(width=1, color="#FF6961"),
+                ),
+                hovertext=hover_texts,
+                hoverinfo="text",
+                name="Pathogenic",
+            ),
+            row=row,
+            col=1,
+        )
+
+    fig.update_yaxes(range=[-0.3, 1.5], showticklabels=False, row=row, col=1)
+
+
+def _add_bfactor_track(
+    fig: go.Figure,
+    row: int,
+    residue_ids: list[int],
+    analysis: dict,
+    hover_map: dict[int, str],
+) -> None:
+    """B-factor / flexibility track.
+
+    Uses contacts_per_residue as a proxy for rigidity (inverse flexibility)
+    since actual B-factors may not be available from predicted structures.
+    """
+    contacts = analysis.get("contacts_per_residue", {})
+    if not contacts:
+        return
+
+    # Inverse: more contacts = more rigid = lower flexibility
+    max_contacts = max(contacts.values()) or 1
+    vals = []
+    for r in residue_ids:
+        c = contacts.get(r, 0)
+        flexibility = 1.0 - (c / max_contacts)
+        vals.append(round(flexibility, 3))
+
+    fig.add_trace(
+        go.Scatter(
+            x=residue_ids,
+            y=vals,
+            mode="lines",
+            line=dict(color="#AC8E68", width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(172,142,104,0.12)",
+            hovertext=[hover_map.get(r, "") for r in residue_ids],
+            hoverinfo="text",
+            name="Flexibility",
+        ),
+        row=row,
+        col=1,
+    )
+    fig.update_yaxes(range=[0, 1.1], row=row, col=1)
+
+
+# ---------------------------------------------------------------------------
+# Hover text builder
+# ---------------------------------------------------------------------------
+
+
+def _build_hover_map(
+    residue_ids: list[int],
+    plddt_scores: list,
+    analysis: dict,
+    pathogenic_positions: dict[int, list[str]],
+) -> dict[int, str]:
+    """Build a combined hover text for each residue showing ALL properties."""
+    sasa = analysis.get("sasa_per_residue", {})
+    sse = analysis.get("sse_per_residue", {})
+    packing = analysis.get("packing_density", {})
+    centrality = analysis.get("network_centrality", {})
+    contacts = analysis.get("contacts_per_residue", {})
+
+    plddt_lookup: dict[int, float] = {}
+    if plddt_scores:
+        for i, rid in enumerate(residue_ids):
+            if i < len(plddt_scores):
+                plddt_lookup[rid] = plddt_scores[i]
+
+    # Gather AlphaMissense data if available (query-specific)
+    am_scores: dict[int, float] = {}
+    am_class: dict[int, str] = {}
+    _am = _get_current_am_data()
+    if _am:
+        am_scores = _am.get("residue_scores", {})
+        am_class = _am.get("classification", {})
+
+    # Gather domain data if available (query-specific)
+    domain_map: dict[int, str] = {}
+    _dom = _get_current_domain_data()
+    if _dom:
+        domain_map = _dom.get("domain_map", {})
+
+    hover_map: dict[int, str] = {}
+    for r in residue_ids:
+        lines = [f"<b>Residue {r}</b>"]
+
+        if r in plddt_lookup:
+            lines.append(f"pLDDT: {plddt_lookup[r]:.1f}")
+
+        if r in am_scores:
+            cls = am_class.get(r, "")
+            cls_str = f" ({cls})" if cls else ""
+            lines.append(f"AM: {am_scores[r]:.3f}{cls_str}")
+
+        if r in domain_map:
+            lines.append(f"Domain: {domain_map[r]}")
+
+        if r in sasa:
+            exposure = "exposed" if sasa[r] >= 25.0 else "buried"
+            lines.append(f"SASA: {sasa[r]:.1f} A^2 ({exposure})")
+
+        ss_code = str(sse.get(r, "")).strip()
+        if ss_code in _SS_LABELS:
+            lines.append(f"SS: {_SS_LABELS[ss_code]}")
+
+        if r in packing:
+            lines.append(f"Packing: {packing[r]} neighbors")
+
+        if r in centrality:
+            lines.append(f"Centrality: {centrality[r]:.4f}")
+
+        if r in contacts:
+            lines.append(f"Contacts: {contacts[r]}")
+
+        if r in pathogenic_positions:
+            names = pathogenic_positions[r]
+            name_str = ", ".join(names) if isinstance(names, list) else str(names)
+            lines.append(f"<span style='color:#E00000'>PATHOGENIC: {name_str}</span>")
+
+        hover_map[r] = "<br>".join(lines)
+
+    return hover_map
+
+
+# ---------------------------------------------------------------------------
+# Detect available tracks
+# ---------------------------------------------------------------------------
+
+
+def _get_current_am_data() -> dict | None:
+    """Get AlphaMissense data for the current query."""
+    query = st.session_state.get("parsed_query")
+    if query and query.uniprot_id:
+        key = f"alphamissense_{query.uniprot_id}"
+        am = st.session_state.get(key)
+        if am and am.get("available"):
+            return am
+    return None
+
+
+def _get_current_domain_data() -> dict | None:
+    """Get domain annotation data for the current query."""
+    query = st.session_state.get("parsed_query")
+    if query and query.uniprot_id:
+        key = f"domains_{query.uniprot_id}"
+        dom = st.session_state.get(key)
+        if dom and dom.get("available"):
+            return dom
+    return None
+
+
+def _detect_available_tracks(
+    analysis: dict,
+    plddt_scores: list,
+    pathogenic_positions: dict[int, list[str]],
+) -> set[str]:
+    """Return set of track keys that have actual data."""
+    available: set[str] = set()
+
+    if plddt_scores:
+        available.add("plddt")
+    if analysis.get("sasa_per_residue"):
+        available.add("sasa")
+    if analysis.get("sse_per_residue"):
+        available.add("secondary_structure")
+    if analysis.get("packing_density"):
+        available.add("packing")
+    if analysis.get("network_centrality"):
+        available.add("centrality")
+    if pathogenic_positions:
+        available.add("variants")
+    if analysis.get("contacts_per_residue"):
+        available.add("bfactor")
+
+    # Check for AlphaMissense data (current query only)
+    if _get_current_am_data():
+        available.add("alphamissense")
+
+    # Check for domain data (current query only)
+    if _get_current_domain_data():
+        available.add("domains")
+
+    return available
+
+
+# ---------------------------------------------------------------------------
+# Insight generation
+# ---------------------------------------------------------------------------
+
+
+def _render_residue_insights(
+    residue_ids: list[int],
+    plddt_scores: list,
+    structure_analysis: dict,
+    mutation_pos: int | None,
+    pathogenic_positions: dict[int, list[str]],
+) -> None:
+    """Auto-identify and display interesting per-residue patterns."""
+    insights: list[str] = []
+
+    sasa = structure_analysis.get("sasa_per_residue", {})
+    sse = structure_analysis.get("sse_per_residue", {})
+    packing = structure_analysis.get("packing_density", {})
+    centrality = structure_analysis.get("network_centrality", {})
+    hub_residues = structure_analysis.get("hub_residues", [])
+
+    plddt_lookup: dict[int, float] = {}
+    if plddt_scores:
+        for i, rid in enumerate(residue_ids):
+            if i < len(plddt_scores):
+                plddt_lookup[rid] = plddt_scores[i]
+
+    # --- Pattern 1: Disordered loops (low pLDDT + high SASA) ---
+    disordered_runs = _find_runs(
+        residue_ids,
+        lambda r: plddt_lookup.get(r, 100) < 60 and sasa.get(r, 0) > 40,
+        min_length=3,
+    )
+    for start, end in disordered_runs:
+        avg_plddt = _avg([plddt_lookup.get(r, 0) for r in range(start, end + 1) if r in plddt_lookup])
+        insights.append(
+            f"**Residues {start}-{end}**: low pLDDT ({avg_plddt:.0f}) + high SASA "
+            f"= likely **disordered loop**. Interpret structure with caution."
+        )
+
+    # --- Pattern 2: Buried mutation (low SASA at mutation site) ---
+    if mutation_pos is not None and mutation_pos in sasa:
+        mut_sasa_val = sasa[mutation_pos]
+        mut_plddt_val = plddt_lookup.get(mutation_pos)
+        ss_code = str(sse.get(mutation_pos, "c")).strip()
+        ss_name = _SS_LABELS.get(ss_code, "coil")
+
+        if mut_sasa_val < 15.0:
+            insights.append(
+                f"**Mutation site (res {mutation_pos})**: deeply buried "
+                f"(SASA={mut_sasa_val:.1f} A^2) in {ss_name}. "
+                "Mutations here likely destabilize the protein fold."
+            )
+        elif mut_sasa_val > 80.0:
+            insights.append(
+                f"**Mutation site (res {mutation_pos})**: highly exposed "
+                f"(SASA={mut_sasa_val:.1f} A^2) in {ss_name}. "
+                "May affect protein-protein interactions or surface binding."
+            )
+
+        if mut_plddt_val is not None and mut_plddt_val < 60:
+            insights.append(
+                f"**Mutation site (res {mutation_pos})**: low confidence "
+                f"(pLDDT={mut_plddt_val:.1f}). The local structure prediction "
+                "may not be reliable here."
+            )
+
+    # --- Pattern 3: Hub residue coincides with mutation or variant ---
+    hub_set = {h["residue"] for h in hub_residues}
+    if mutation_pos is not None and mutation_pos in hub_set:
+        cent_val = centrality.get(mutation_pos, 0)
+        insights.append(
+            f"**Mutation site (res {mutation_pos})** is a **network hub** "
+            f"(centrality={cent_val:.4f}). Disrupting this residue may propagate "
+            "structural effects throughout the protein."
+        )
+
+    variant_hub_hits = [p for p in pathogenic_positions if p in hub_set]
+    if variant_hub_hits:
+        pos_str = ", ".join(str(p) for p in sorted(variant_hub_hits)[:5])
+        insights.append(
+            f"**{len(variant_hub_hits)} pathogenic variant(s)** coincide with network hub "
+            f"residues ({pos_str}). These positions are structurally critical."
+        )
+
+    # --- Pattern 4: Dense packing near mutation ---
+    if mutation_pos is not None and packing:
+        mut_packing = packing.get(mutation_pos, 0)
+        all_packing = list(packing.values())
+        if all_packing:
+            packing_pctile = sum(1 for v in all_packing if v <= mut_packing) / len(all_packing)
+            if packing_pctile > 0.9:
+                insights.append(
+                    f"**Mutation site (res {mutation_pos})**: very densely packed "
+                    f"({mut_packing} neighbors, top {100 - packing_pctile * 100:.0f}th percentile). "
+                    "Limited space for side-chain changes -- conservative substitutions only."
+                )
+
+    # --- Pattern 5: Pathogenic variant clusters in low-confidence regions ---
+    low_conf_variants = [
+        p for p in pathogenic_positions
+        if plddt_lookup.get(p, 100) < 60
+    ]
+    if low_conf_variants:
+        pos_str = ", ".join(str(p) for p in sorted(low_conf_variants)[:5])
+        insights.append(
+            f"**{len(low_conf_variants)} pathogenic variant(s)** fall in low-confidence "
+            f"regions (pLDDT < 60): {pos_str}. Structural impact assessment is uncertain."
+        )
+
+    # --- Pattern 6: Helix-to-coil transition near mutation ---
+    if mutation_pos is not None and sse:
+        nearby_ss = [
+            str(sse.get(r, "c")).strip()
+            for r in range(mutation_pos - 3, mutation_pos + 4)
+            if r in sse
+        ]
+        unique_ss = set(nearby_ss)
+        if len(unique_ss) >= 2 and "c" in unique_ss:
+            ss_names = [_SS_LABELS.get(s, s) for s in unique_ss]
+            insights.append(
+                f"**Mutation site (res {mutation_pos})**: at a secondary structure "
+                f"transition ({' / '.join(ss_names)}). Boundary residues are often "
+                "sensitive to mutation."
+            )
+
+    # ---- Render ----
+    if insights:
+        st.markdown("#### Residue Insights")
+        for insight in insights:
+            st.info(insight)
+    else:
+        st.caption("No notable per-residue patterns detected.")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_mutation_pos(mutation: str | None) -> int | None:
+    """Extract the numeric position from a mutation string like 'R248W'."""
+    if not mutation:
+        return None
+    m = re.match(r"[A-Za-z](\d+)[A-Za-z]", mutation)
+    if m:
+        return int(m.group(1))
+    # Try plain number
+    m2 = re.match(r"(\d+)", mutation)
+    if m2:
+        return int(m2.group(1))
+    return None
+
+
+def _find_runs(
+    residue_ids: list[int],
+    predicate,
+    min_length: int = 3,
+) -> list[tuple[int, int]]:
+    """Find contiguous runs of residues satisfying a predicate.
+
+    Returns list of (start_resid, end_resid) tuples.
+    """
+    runs: list[tuple[int, int]] = []
+    run_start: int | None = None
+    prev_rid: int | None = None
+
+    for rid in residue_ids:
+        if predicate(rid):
+            if run_start is None:
+                run_start = rid
+            elif prev_rid is not None and rid - prev_rid > 1:
+                # Gap in residue numbering -- close previous run
+                if prev_rid - run_start + 1 >= min_length:
+                    runs.append((run_start, prev_rid))
+                run_start = rid
+        else:
+            if run_start is not None and prev_rid is not None:
+                if prev_rid - run_start + 1 >= min_length:
+                    runs.append((run_start, prev_rid))
+                run_start = None
+        prev_rid = rid
+
+    # Close last run
+    if run_start is not None and prev_rid is not None:
+        if prev_rid - run_start + 1 >= min_length:
+            runs.append((run_start, prev_rid))
+
+    return runs
+
+
+def _avg(values: list[float]) -> float:
+    """Mean of a list, returning 0.0 for empty lists."""
+    return sum(values) / len(values) if values else 0.0

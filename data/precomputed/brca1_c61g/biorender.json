@@ -1,0 +1,38 @@
+[
+  {
+    "name": "BRCA1 DNA Repair Pathway",
+    "type": "template",
+    "description": "Homologous recombination repair: BRCA1/BRCA2/RAD51 complex at double-strand breaks",
+    "url": "https://www.biorender.com/template/mapk-signaling-pathway"
+  },
+  {
+    "name": "RING Domain Mutation Impact",
+    "type": "template",
+    "description": "Show how C61G disrupts the RING finger zinc coordination and E3 ubiquitin ligase activity",
+    "url": "https://www.biorender.com/template/site-directed-mutagenesis"
+  },
+  {
+    "name": "PARP Inhibitor Mechanism",
+    "type": "template",
+    "description": "Synthetic lethality: BRCA1 loss + PARP inhibition → unrepaired DNA → cell death",
+    "url": "https://www.biorender.com/template/daptomycin-mechanism-of-action"
+  },
+  {
+    "name": "Protein Domain Architecture",
+    "type": "template",
+    "description": "BRCA1 domain map: RING → coiled-coil → SCD → BRCT with mutation positions marked",
+    "url": "https://www.biorender.com/template/protein-structure"
+  },
+  {
+    "name": "Drug Discovery Pipeline",
+    "type": "template",
+    "description": "PARP inhibitor development funnel from target ID to clinical trials",
+    "url": "https://www.biorender.com/template/drug-discovery-development-funnel"
+  },
+  {
+    "name": "DNA Repair Icons",
+    "type": "icon",
+    "description": "Icons for DNA double-strand break, repair proteins, and checkpoint signaling",
+    "url": "https://www.biorender.com/library?q=DNA+repair"
+  }
+]
