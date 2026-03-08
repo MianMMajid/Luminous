@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Protein Structure",
+    "type": "template",
+    "description": "Hemoglobin alpha subunit — 3D structure with heme binding site annotated",
+    "url": "https://www.biorender.com/template/protein-structure"
+  },
+  {
+    "name": "Protein-Protein Interaction",
+    "type": "template",
+    "description": "Hemoglobin tetramer assembly: alpha-beta dimer interactions and cooperativity",
+    "url": "https://www.biorender.com/template/protein-protein-interaction-ppi-network"
+  },
+  {
+    "name": "Multiple Sequence Alignment",
+    "type": "template",
+    "description": "Conservation analysis of hemoglobin alpha across species",
+    "url": "https://www.biorender.com/template/multiple-sequence-alignment-protein"
+  },
+  {
+    "name": "TGF-beta Signaling",
+    "type": "template",
+    "description": "Adaptable pathway template — customize for erythropoiesis regulation",
+    "url": "https://www.biorender.com/template/tgf-beta-signaling-pathway"
+  },
+  {
+    "name": "Blood Cell & Protein Icons",
+    "type": "icon",
+    "description": "Red blood cells, hemoglobin, heme group, oxygen molecule icons",
+    "url": "https://www.biorender.com/library?q=hemoglobin+red+blood+cell"
+  }
+]

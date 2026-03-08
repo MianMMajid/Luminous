@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Drug Resistance Mechanism",
+    "type": "template",
+    "description": "Show how T790M gatekeeper mutation sterically blocks erlotinib/gefitinib binding in EGFR kinase pocket",
+    "url": "https://www.biorender.com/template/daptomycin-mechanism-of-action"
+  },
+  {
+    "name": "Kinase Inhibitor Generations",
+    "type": "template",
+    "description": "Timeline of EGFR TKI generations: 1st (erlotinib) → 2nd (afatinib) → 3rd (osimertinib)",
+    "url": "https://www.biorender.com/template/drug-discovery-development-funnel"
+  },
+  {
+    "name": "RTK Signaling Cascade",
+    "type": "template",
+    "description": "EGFR → RAS/RAF/MEK/ERK and PI3K/AKT/mTOR pathways with drug intervention points",
+    "url": "https://www.biorender.com/template/mapk-signaling-pathway"
+  },
+  {
+    "name": "Drug-Target Binding Interface",
+    "type": "template",
+    "description": "Detailed view of ATP-binding pocket with T790M mutation and drug molecule overlay",
+    "url": "https://www.biorender.com/template/protein-ligand-binding"
+  },
+  {
+    "name": "Drug Targeting Pathways",
+    "type": "template",
+    "description": "Clinical treatment pathway for EGFR-mutant NSCLC based on mutation profile",
+    "url": "https://www.biorender.com/template/drug-targeting-in-cytokine-receptor-pathways"
+  },
+  {
+    "name": "Small Molecule Drug Icons",
+    "type": "icon",
+    "description": "Chemical structure icons for TKIs, ATP, and competitive inhibitors",
+    "url": "https://www.biorender.com/library?q=small+molecule+drug"
+  }
+]

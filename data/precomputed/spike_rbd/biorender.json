@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Protein-Protein Interaction Network",
+    "type": "template",
+    "description": "Spike RBD-ACE2 binding interface with key contact residues highlighted",
+    "url": "https://www.biorender.com/template/protein-protein-interaction-ppi-network"
+  },
+  {
+    "name": "Protein-Ligand Binding",
+    "type": "template",
+    "description": "Detailed view of Spike-ACE2 binding interface and interaction residues",
+    "url": "https://www.biorender.com/template/protein-ligand-binding"
+  },
+  {
+    "name": "mRNA Vaccine Mechanism",
+    "type": "template",
+    "description": "mRNA vaccine encoding Spike protein — structure and mechanism of action",
+    "url": "https://www.biorender.com/template/mrna-vaccine-structure-and-mechanism-of-action"
+  },
+  {
+    "name": "Virus Mutation Analysis",
+    "type": "template",
+    "description": "Track Spike RBD mutations across SARS-CoV-2 variants and immune evasion",
+    "url": "https://www.biorender.com/template/virus-mutation"
+  },
+  {
+    "name": "TLR Immune Signaling",
+    "type": "template",
+    "description": "Innate immune response pathway triggered by SARS-CoV-2 infection",
+    "url": "https://www.biorender.com/template/tlr-signaling-pathway"
+  },
+  {
+    "name": "Virus & Antibody Icons",
+    "type": "icon",
+    "description": "SARS-CoV-2 virion, spike protein, ACE2 receptor, neutralizing antibody icons",
+    "url": "https://www.biorender.com/library?q=coronavirus+spike"
+  }
+]

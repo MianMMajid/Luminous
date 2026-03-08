@@ -1,0 +1,62 @@
+{
+  "narrative": "EGFR T790M is the most common acquired resistance mutation to first- and second-generation EGFR tyrosine kinase inhibitors (TKIs) in non-small cell lung cancer. The methionine substitution at the gatekeeper position sterically hinders binding of reversible inhibitors like gefitinib and erlotinib while increasing ATP affinity.",
+  "disease_associations": [
+    {
+      "disease": "Non-Small Cell Lung Cancer",
+      "score": 0.99,
+      "evidence": "Driver and resistance mutation"
+    },
+    {
+      "disease": "Glioblastoma",
+      "score": 0.7,
+      "evidence": "EGFR amplification/mutation"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "Osimertinib",
+      "phase": "Approved",
+      "mechanism": "Third-generation EGFR TKI \u2014 covalently binds C797, overcomes T790M",
+      "source": "FDA"
+    },
+    {
+      "name": "Lazertinib",
+      "phase": "Approved",
+      "mechanism": "Third-generation EGFR TKI targeting T790M",
+      "source": "FDA"
+    },
+    {
+      "name": "Amivantamab",
+      "phase": "Approved",
+      "mechanism": "Bispecific EGFR-MET antibody",
+      "source": "FDA"
+    },
+    {
+      "name": "Gefitinib",
+      "phase": "Approved (1st-gen)",
+      "mechanism": "Reversible EGFR TKI \u2014 ineffective against T790M",
+      "source": "FDA"
+    }
+  ],
+  "literature": {
+    "total_papers": 4521,
+    "recent_papers": 198,
+    "key_findings": [
+      "T790M restores ATP affinity to wild-type levels while sterically blocking reversible TKIs",
+      "Osimertinib overcomes T790M resistance via covalent binding to C797",
+      "C797S tertiary mutation confers resistance to third-generation TKIs",
+      "Combination strategies with MET inhibitors show promise post-osimertinib"
+    ]
+  },
+  "pathways": [
+    "EGFR signaling",
+    "RAS-MAPK pathway",
+    "PI3K-AKT pathway",
+    "Cell proliferation"
+  ],
+  "suggested_experiments": [
+    "SPR or ITC to measure binding affinity of TKIs to T790M mutant",
+    "Cell viability assays in Ba/F3-EGFR-T790M cells",
+    "Structural analysis of drug binding mode by X-ray crystallography"
+  ]
+}

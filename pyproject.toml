@@ -1,0 +1,41 @@
+[project]
+name = "luminous"
+version = "0.1.0"
+description = "The AI Data Visualiser — accountability layer for bio AI predictions"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.44",
+    "anthropic>=0.84",
+    "molviewspec>=1.8",
+    "biomcp-python>=0.7.3",
+    "plotly>=6.0",
+    "biotite>=1.6",
+    "httpx>=0.28",
+    "pydantic>=2.5",
+    "pandas>=2.2",
+    "streamlit-shadcn-ui>=0.1.19",
+    "streamlit-lottie>=0.0.5",
+    "streamlit-extras>=0.7",
+    "fpdf2>=2.8",
+    "modal>=0.73",
+    "streamlit-drawable-canvas-fix>=0.9.8",
+    "prody>=2.4",
+    "claude-agent-sdk>=0.1",
+    "streamlit-agraph>=0.0.45",
+    "streamlit-flow-component>=1.0.0",
+    "streamlit-elements>=0.1,<0.2",
+    "pingouin>=0.5.5",
+    "lifelines>=0.30",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.11",
+]

@@ -1,0 +1,4 @@
+{
+  "text": "## Structure Prediction Summary for EGFR\n\n**Overall Confidence:** high (91.0%)\n\n**Mutation:** T790M\n\nEGFR T790M is the most common acquired resistance mutation to first- and second-generation EGFR tyrosine kinase inhibitors (TKIs) in non-small cell lung cancer. The methionine substitution at the gatekeeper position sterically hinders binding of reversible inhibitors like gefitinib and erlotinib while increasing ATP affinity.\n\nTherapeutic options include Osimertinib, Lazertinib, Amivantamab.\n\n*Pre-generated interpretation for demo resilience.*",
+  "model": "fallback"
+}

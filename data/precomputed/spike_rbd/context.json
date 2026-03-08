@@ -1,0 +1,62 @@
+{
+  "narrative": "The SARS-CoV-2 spike protein receptor-binding domain (RBD, residues 319-541) mediates host cell entry by binding human ACE2. The RBD undergoes conformational changes between 'up' (ACE2-accessible) and 'down' (hidden) states. Key contact residues (K417, E484, N501) are hotspots for immune-evasive mutations in variants of concern (Alpha, Beta, Delta, Omicron).",
+  "disease_associations": [
+    {
+      "disease": "COVID-19",
+      "score": 0.99,
+      "evidence": "Primary viral entry mechanism"
+    },
+    {
+      "disease": "Post-acute COVID Syndrome",
+      "score": 0.75,
+      "evidence": "Persistent spike-mediated effects"
+    }
+  ],
+  "drugs": [
+    {
+      "name": "Nirmatrelvir (Paxlovid)",
+      "phase": "Approved",
+      "mechanism": "SARS-CoV-2 Mpro inhibitor",
+      "source": "FDA"
+    },
+    {
+      "name": "Bebtelovimab",
+      "phase": "Approved (EUA)",
+      "mechanism": "Monoclonal antibody targeting RBD",
+      "source": "FDA"
+    },
+    {
+      "name": "Sotrovimab",
+      "phase": "Approved (EUA)",
+      "mechanism": "Monoclonal antibody binding conserved RBD epitope",
+      "source": "FDA"
+    },
+    {
+      "name": "Evusheld (tixagevimab/cilgavimab)",
+      "phase": "Approved (EUA)",
+      "mechanism": "Long-acting antibody cocktail targeting RBD",
+      "source": "FDA"
+    }
+  ],
+  "literature": {
+    "total_papers": 28500,
+    "recent_papers": 450,
+    "key_findings": [
+      "Cryo-EM reveals RBD conformational dynamics between up/down states on trimeric spike",
+      "N501Y mutation increases ACE2 binding affinity 10-fold, driving Alpha variant spread",
+      "E484K enables immune escape from convalescent and vaccine-elicited antibodies",
+      "Pan-sarbecovirus antibodies target conserved RBD class 4 epitopes"
+    ]
+  },
+  "pathways": [
+    "Viral entry",
+    "ACE2-RAS signaling",
+    "Innate immune response",
+    "Antibody neutralization"
+  ],
+  "suggested_experiments": [
+    "SPR to measure RBD-ACE2 binding kinetics for variant mutations",
+    "Pseudovirus neutralization assay with convalescent sera",
+    "Cryo-EM of spike trimer to visualize RBD dynamics"
+  ]
+}

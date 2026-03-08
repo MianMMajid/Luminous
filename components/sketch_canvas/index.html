@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .toolbar {
+    display: flex; gap: 6px; align-items: center; padding: 6px 4px;
+    font-size: 12px; color: #6B7280; flex-wrap: wrap;
+  }
+  .toolbar label { margin-right: 2px; font-weight: 500; }
+  .toolbar select, .toolbar input[type=color] {
+    background: #F2F2F7; color: #1C1C1E; border: 1px solid #C6C6C8;
+    border-radius: 4px; padding: 3px 6px; font-size: 12px;
+  }
+  .toolbar input[type=color] { width: 28px; height: 24px; padding: 1px; cursor: pointer; }
+  .toolbar input[type=range] { width: 70px; accent-color: #007AFF; }
+  .toolbar .spacer { flex: 1; }
+  .btn {
+    background: #C6C6C8; color: #1C1C1E; border: 1px solid #8E8E93;
+    border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px;
+  }
+  .btn:hover { background: #8E8E93; }
+  .btn.primary { background: #007AFF; border-color: #007AFF; font-weight: 600; }
+  .btn.primary:hover { background: #0056D6; }
+  #canvas {
+    border: 2px solid #C6C6C8; border-radius: 6px; cursor: crosshair;
+    display: block; width: 100%;
+  }
+  .status { font-size: 11px; color: #34C759; height: 16px; padding: 2px 4px; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <label>Tool:</label>
+  <select id="tool">
+    <option value="pen">Pen</option>
+    <option value="line">Line</option>
+    <option value="rect">Rect</option>
+    <option value="circle">Circle</option>
+    <option value="arrow">Arrow</option>
+    <option value="text">Text</option>
+    <option value="eraser">Eraser</option>
+  </select>
+  <label>Color:</label>
+  <input type="color" id="color" value="#007AFF">
+  <label>Size:</label>
+  <input type="range" id="size" min="1" max="15" value="3">
+  <div class="spacer"></div>
+  <button class="btn" onclick="undo()">Undo</button>
+  <button class="btn" onclick="clearCanvas()">Clear</button>
+  <button class="btn primary" onclick="sendToStreamlit()">Send to Lumi</button>
+</div>
+<canvas id="canvas"></canvas>
+<div class="status" id="status"></div>
+
+<script>
+// ── Streamlit Component API ──
+let streamlitReady = false;
+
+function sendMessageToStreamlit(type, data) {
+  window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: type}, data), "*");
+}
+
+function init() {
+  sendMessageToStreamlit("streamlit:componentReady", {apiVersion: 1});
+}
+
+function setFrameHeight(h) {
+  sendMessageToStreamlit("streamlit:setFrameHeight", {height: h});
+}
+
+function sendValue(val) {
+  sendMessageToStreamlit("streamlit:setComponentValue", {value: val});
+}
+
+window.addEventListener("message", function(e) {
+  if (e.data && e.data.type === "streamlit:render") {
+    streamlitReady = true;
+    // Resize canvas to container width
+    const args = e.data.args || {};
+    const cw = args.canvasWidth || canvas.parentElement.clientWidth - 8;
+    const ch = args.canvasHeight || 460;
+    if (canvas.width !== cw || canvas.height !== ch) {
+      resizeCanvas(cw, ch);
+    }
+    setFrameHeight(ch + 70);
+  }
+});
+
+// ── Canvas Drawing ──
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+let drawing = false, startX = 0, startY = 0;
+let history = [], snapshot = null;
+
+function resizeCanvas(w, h) {
+  // Save current content
+  let imgData = null;
+  if (canvas.width > 0 && canvas.height > 0) {
+    try { imgData = canvas.toDataURL(); } catch(e) {}
+  }
+  canvas.width = w;
+  canvas.height = h;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, w, h);
+  if (imgData) {
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0); saveHistory(); };
+    img.src = imgData;
+  } else {
+    saveHistory();
+  }
+}
+
+// Initial size
+canvas.width = 900;
+canvas.height = 460;
+ctx.fillStyle = "#FFFFFF";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+saveHistory();
+
+function getTool() { return document.getElementById("tool").value; }
+function getColor() { return getTool() === "eraser" ? "#FFFFFF" : document.getElementById("color").value; }
+function getSize() { return getTool() === "eraser" ? 20 : parseInt(document.getElementById("size").value); }
+
+function saveHistory() {
+  if (history.length > 40) history.shift();
+  history.push(canvas.toDataURL());
+}
+
+function undo() {
+  if (history.length > 1) {
+    history.pop();
+    const img = new Image();
+    img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img, 0, 0); };
+    img.src = history[history.length - 1];
+  }
+}
+
+function clearCanvas() {
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  saveHistory();
+  document.getElementById("status").textContent = "";
+}
+
+function sendToStreamlit() {
+  const dataUrl = canvas.toDataURL("image/png");
+  sendValue(dataUrl);
+  document.getElementById("status").textContent = "Sent to Lumi for interpretation!";
+}
+
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  return {
+    x: (e.clientX - r.left) * scaleX,
+    y: (e.clientY - r.top) * scaleY
+  };
+}
+
+canvas.addEventListener("mousedown", function(e) {
+  const tool = getTool();
+  const pos = getPos(e);
+  startX = pos.x; startY = pos.y;
+
+  if (tool === "text") {
+    const txt = prompt("Label:");
+    if (txt) {
+      ctx.font = (getSize() * 5 + 10) + "px sans-serif";
+      ctx.fillStyle = getColor();
+      ctx.fillText(txt, startX, startY);
+      saveHistory();
+    }
+    return;
+  }
+
+  drawing = true;
+  snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  if (tool === "pen" || tool === "eraser") {
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.strokeStyle = getColor();
+    ctx.lineWidth = getSize();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  }
+});
+
+canvas.addEventListener("mousemove", function(e) {
+  if (!drawing) return;
+  const tool = getTool();
+  const pos = getPos(e);
+  const x = pos.x, y = pos.y;
+
+  if (tool === "pen" || tool === "eraser") {
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  } else {
+    ctx.putImageData(snapshot, 0, 0);
+    ctx.strokeStyle = getColor();
+    ctx.lineWidth = getSize();
+    ctx.lineCap = "round";
+
+    if (tool === "line" || tool === "arrow") {
+      ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(x, y); ctx.stroke();
+      if (tool === "arrow") {
+        const angle = Math.atan2(y - startY, x - startX);
+        const hl = 14;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - hl * Math.cos(angle - 0.4), y - hl * Math.sin(angle - 0.4));
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - hl * Math.cos(angle + 0.4), y - hl * Math.sin(angle + 0.4));
+        ctx.stroke();
+      }
+    } else if (tool === "rect") {
+      ctx.beginPath();
+      ctx.strokeRect(startX, startY, x - startX, y - startY);
+    } else if (tool === "circle") {
+      const rx = Math.abs(x - startX) / 2, ry = Math.abs(y - startY) / 2;
+      const cx = (startX + x) / 2, cy = (startY + y) / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(rx, 1), Math.max(ry, 1), 0, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  }
+});
+
+canvas.addEventListener("mouseup", function() {
+  if (drawing) { drawing = false; saveHistory(); }
+});
+
+canvas.addEventListener("mouseleave", function() {
+  if (drawing) { drawing = false; saveHistory(); }
+});
+
+// ── Init ──
+init();
+setFrameHeight(530);
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "variants": [
+    {"position": 175, "name": "R175H", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome", "frequency": 0.00001},
+    {"position": 220, "name": "Y220C", "significance": "pathogenic", "disease": "Hereditary cancer-predisposing syndrome"},
+    {"position": 245, "name": "G245S", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome"},
+    {"position": 248, "name": "R248W", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome", "cadd_score": 28.5},
+    {"position": 248, "name": "R248Q", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome", "cadd_score": 27.1},
+    {"position": 249, "name": "R249S", "significance": "pathogenic", "disease": "Hepatocellular carcinoma"},
+    {"position": 273, "name": "R273H", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome", "cadd_score": 26.8},
+    {"position": 273, "name": "R273C", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome"},
+    {"position": 282, "name": "R282W", "significance": "pathogenic", "disease": "Li-Fraumeni Syndrome"},
+    {"position": 176, "name": "C176F", "significance": "likely_pathogenic", "disease": "Hereditary cancer"},
+    {"position": 242, "name": "C242S", "significance": "likely_pathogenic", "disease": "Hereditary cancer"},
+    {"position": 158, "name": "R158L", "significance": "likely_pathogenic", "disease": "Li-Fraumeni Syndrome"}
+  ],
+  "summary": "Found 12 annotated variants for TP53. 9 pathogenic, 3 likely pathogenic. 10 residue positions harbor known pathogenic variants. The queried mutation R248W at position 248 is at a known pathogenic hotspot -- the most frequently mutated residue in human cancers.",
+  "pathogenic_positions": {
+    "175": ["R175H"],
+    "220": ["Y220C"],
+    "245": ["G245S"],
+    "248": ["R248W", "R248Q"],
+    "249": ["R249S"],
+    "273": ["R273H", "R273C"],
+    "282": ["R282W"]
+  },
+  "total": 12,
+  "pathogenic_count": 9,
+  "likely_pathogenic_count": 3
+}
