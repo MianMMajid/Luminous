@@ -68,7 +68,6 @@ def _load_from_project():
         try:
             data = json.loads(uploaded.read().decode("utf-8"))
             st.session_state["comparison_data"] = _parse_comparison(data)
-            st.rerun()
         except Exception as e:
             st.error(f"Failed to load comparison: {e}")
             return
@@ -89,7 +88,6 @@ def _load_from_project():
                     try:
                         data = json.loads(pf.read_text())
                         st.session_state["comparison_data"] = _parse_comparison(data)
-                        st.rerun()
                     except Exception as e:
                         st.error(f"Failed to load: {e}")
 
@@ -166,7 +164,6 @@ def _load_from_precomputed():
                 "prediction": pred,
                 "trust_audit": ta,
             }
-            st.rerun()
         else:
             st.warning(
                 f"No precomputed data found for {selected}. "
@@ -295,7 +292,6 @@ def _render_side_by_side(
     # Clear comparison button
     if st.button("Clear Comparison", key="clear_compare", use_container_width=True):
         st.session_state.pop("comparison_data", None)
-        st.rerun()
 
 
 def _render_plddt_overlay(

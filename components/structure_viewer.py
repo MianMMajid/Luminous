@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 
-import molviewspec as mvs
 import streamlit as st
+
+try:
+    import molviewspec as mvs
+except Exception:
+    mvs = None  # Python 3.9 compat — molviewspec needs 3.10+
 
 from src.models import PredictionResult, ProteinQuery, TrustAudit
 from src.trust_auditor import build_trust_audit, get_residue_flags
@@ -18,12 +22,16 @@ from src.utils import (
 
 def render_structure_viewer():
     """Tab 2: 3D structure viewer with trust audit panel -- THE HERO SCREEN."""
-    if not st.session_state.get("query_parsed"):
-        st.info(
-            "No query loaded yet. Go to the **Search** tab and enter a protein to investigate. "
-            "You can type a protein name (e.g. TP53), add a mutation (e.g. R248W), "
-            "or try one of the example queries."
+    if mvs is None:
+        st.warning(
+            "3D viewer requires Python 3.10+. "
+            "Current version doesn't support molviewspec. "
+            "Run: `brew install python@3.12 && python3.12 -m pip install -r requirements.txt`"
         )
+        return
+    if not st.session_state.get("query_parsed"):
+        from components.empty_state import render_empty_state
+        render_empty_state("structure")
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
@@ -61,12 +69,29 @@ def render_structure_viewer():
 
     trust_audit: TrustAudit | None = st.session_state.get("trust_audit")
 
+    # Compact header with protein metadata
+    mut_str = f" ({query.mutation})" if query.mutation else ""
+    source_str = prediction.compute_source.upper() if prediction and prediction.compute_source else "Predicted"
+    conf_str = ""
+    if trust_audit:
+        conf_str = f' · {confidence_emoji(trust_audit.overall_confidence)} {trust_audit.overall_confidence.title()} confidence'
+    st.markdown(
+        f'<div class="lumi-tab-header">'
+        f'<div class="tab-title">{query.protein_name}{mut_str}</div>'
+        f'<div class="tab-subtitle">{source_str} structure{conf_str}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     # Auto-generate interpretation if context is loaded but interpretation isn't
     if (
         st.session_state.get("bio_context") is not None
         and st.session_state.get("interpretation") is None
     ):
         _auto_interpret(query, {})
+
+    # Guided Tour — quick-focus buttons for key structural regions
+    _render_guided_tour(query, prediction, trust_audit)
 
     # Layout: 3D viewer (left) + Trust audit panel (right)
     if trust_audit:
@@ -129,6 +154,34 @@ def render_structure_viewer():
     st.divider()
     _render_auto_analyze(query, prediction)
 
+    # Residue Dashboard — genome-browser-style multi-track strip chart
+    st.divider()
+    from components.residue_dashboard import render_residue_dashboard
+
+    structure_analysis = st.session_state.get("structure_analysis") or {}
+    if not structure_analysis and prediction.pdb_content:
+        try:
+            from src.structure_analysis import analyze_structure
+            import re
+            mutation_pos = None
+            if query.mutation:
+                m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+                if m:
+                    mutation_pos = int(m.group(1))
+            first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
+            structure_analysis = analyze_structure(prediction.pdb_content, mutation_pos=mutation_pos, first_chain=first_chain)
+            st.session_state["structure_analysis"] = structure_analysis
+            st.session_state[f"struct_analysis_{query.protein_name}_{query.mutation}"] = structure_analysis
+        except Exception:
+            pass
+    variant_data = st.session_state.get(f"variant_data_{query.protein_name}")
+    render_residue_dashboard(
+        structure_analysis,
+        prediction.plddt_per_residue or [],
+        query,
+        variant_data,
+    )
+
     # Tamarind Bio Multi-Tool Analysis
     st.divider()
     from components.tamarind_panel import render_tamarind_panel
@@ -140,19 +193,6 @@ def render_structure_viewer():
     from components.pipeline_builder import render_pipeline_builder
 
     render_pipeline_builder(query, prediction)
-
-    # Residue Dashboard — genome-browser-style multi-track strip chart
-    st.divider()
-    from components.residue_dashboard import render_residue_dashboard
-
-    structure_analysis = st.session_state.get("structure_analysis", {})
-    variant_data = st.session_state.get(f"variant_data_{query.protein_name}")
-    render_residue_dashboard(
-        structure_analysis,
-        prediction.plddt_per_residue or [],
-        query,
-        variant_data,
-    )
 
     # Pin pLDDT to Playground
     if prediction.plddt_per_residue:
@@ -337,29 +377,107 @@ def _run_prediction(query: ProteinQuery):
                 st.caption(f"Loaded Boltz-2 prediction for {query.protein_name}")
                 return
 
-    # Live compute — respect user backend choice or auto-fallback
-    if query.sequence:
-        st.session_state["pipeline_running"] = True
-        if backend in ("auto", "tamarind"):
-            if _run_tamarind(query):
-                st.session_state["pipeline_running"] = False
-                return
-        if backend in ("auto", "modal"):
-            if _run_modal(query):
-                st.session_state["pipeline_running"] = False
-                return
-        st.session_state["pipeline_running"] = False
+    # Live compute — use background tasks for non-blocking predictions
+    from src.task_manager import task_manager
 
-    # RCSB PDB fallback
+    # Check if a prediction task is already running
+    pred_status = task_manager.status("prediction")
+    if pred_status and pred_status.value == "running":
+        st.info(
+            "Structure prediction is running in the background. "
+            "You can explore other tabs while waiting — Lumi will notify you when it's done."
+        )
+        _render_prediction_progress()
+        return
+
+    if query.sequence:
+        if _submit_prediction_background(query, backend):
+            st.info(
+                "Structure prediction submitted! "
+                "You can switch to other tabs — Lumi will notify you when it's ready."
+            )
+            _render_prediction_progress()
+            return
+
+    # RCSB PDB fallback — submit to background to avoid blocking
     if backend in ("auto", "rcsb") and query.uniprot_id:
-        st.session_state["pipeline_running"] = True
-        _fetch_from_rcsb(query)
-        st.session_state["pipeline_running"] = False
+        from src.task_manager import task_manager
+        pred_status_rcsb = task_manager.status("prediction")
+        if not pred_status_rcsb or pred_status_rcsb.value not in ("pending", "running"):
+            task_manager.submit(
+                task_id="prediction",
+                fn=_fetch_rcsb_background,
+                args=(query.uniprot_id,),
+                label=f"Fetching {query.uniprot_id} from RCSB PDB",
+            )
+        st.info(
+            "Fetching experimental structure from RCSB PDB in the background. "
+            "Feel free to explore other tabs."
+        )
         return
 
     st.warning(
         "No sequence or precomputed data available. "
         "Select an example or provide a protein sequence."
+    )
+
+
+def _submit_prediction_background(query: ProteinQuery, backend: str) -> bool:
+    """Submit prediction as a background task. Returns True if submitted."""
+    from src.task_manager import task_manager
+
+    num_recycles = st.session_state.get("boltz_recycling_steps", 3)
+    use_msa = st.session_state.get("boltz_use_msa", True)
+    predict_affinity = st.session_state.get("boltz_predict_affinity", True)
+
+    if backend in ("auto", "tamarind"):
+        from src.config import TAMARIND_API_KEY
+        if TAMARIND_API_KEY:
+            from src.background_tasks import run_prediction_tamarind
+            task_manager.submit(
+                task_id="prediction",
+                fn=run_prediction_tamarind,
+                args=(query.sequence, query.protein_name, query.mutation),
+                kwargs={
+                    "predict_affinity": predict_affinity,
+                    "num_recycles": num_recycles,
+                    "use_msa": use_msa,
+                },
+                label="Boltz-2 structure prediction (Tamarind)",
+                target_keys={"__direct__": "_prediction_raw"},
+            )
+            return True
+
+    if backend in ("auto", "modal"):
+        from src.modal_client import is_modal_available
+        if is_modal_available():
+            from src.background_tasks import run_prediction_modal
+            task_manager.submit(
+                task_id="prediction",
+                fn=run_prediction_modal,
+                args=(query.sequence, query.protein_name, query.mutation),
+                kwargs={"predict_affinity": predict_affinity},
+                label="Boltz-2 structure prediction (Modal H100)",
+                target_keys={"__direct__": "_prediction_raw"},
+            )
+            return True
+
+    return False
+
+
+def _render_prediction_progress():
+    """Show a waiting card while prediction runs in background."""
+    st.markdown(
+        '<div class="glow-card" style="text-align:center;padding:32px 24px;'
+        'border-color:rgba(255,149,0,0.3)">'
+        '<div style="font-size:2rem;margin-bottom:8px">🧬</div>'
+        '<div style="font-weight:600;font-size:1.1rem;margin-bottom:6px">'
+        'Structure prediction running...</div>'
+        '<div style="font-size:0.88rem;color:rgba(60,60,67,0.6)">'
+        'Boltz-2 is predicting the 3D structure. This typically takes 30s–5min.<br>'
+        'Feel free to explore other tabs — Lumi will notify you when it\'s done.'
+        '</div></div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -493,7 +611,7 @@ def _fetch_from_rcsb(query: ProteinQuery):
     """Fetch a known structure from RCSB PDB as fallback."""
     import httpx
 
-    with st.spinner(f"Fetching experimental structure for {query.uniprot_id} from RCSB PDB..."):
+    with st.status(f"Fetching experimental structure for {query.uniprot_id} from RCSB PDB..."):
         try:
             search_url = "https://search.rcsb.org/rcsbsearch/v2/query"
             search_query = {
@@ -578,6 +696,52 @@ def _store_prediction(
     )
 
 
+def _render_molstar_with_annotations(
+    prediction: PredictionResult,
+    annotations: list[dict],
+    height: int = 600,
+):
+    """Reusable Mol* renderer with per-residue color + tooltip annotations.
+
+    Each annotation dict: {"label_asym_id": str, "label_seq_id": int, "color": str, "tooltip": str}
+    """
+    if not prediction.pdb_content:
+        st.warning("No structure data available.")
+        return
+
+    builder = mvs.create_builder()
+    structure = (
+        builder.download(url="structure.pdb")
+        .parse(format="pdb")
+        .model_structure()
+    )
+    rep = structure.component().representation(type="cartoon")
+    if annotations:
+        rep.color_from_uri(
+            uri="annot_colors.json", format="json", schema="residue"
+        )
+        structure.tooltip_from_uri(
+            uri="annot_tooltips.json", format="json", schema="residue"
+        )
+
+    data: dict[str, bytes] = {
+        "structure.pdb": prediction.pdb_content.encode("utf-8"),
+    }
+    if annotations:
+        color_data = [
+            {"label_asym_id": a["label_asym_id"], "label_seq_id": a["label_seq_id"], "color": a["color"]}
+            for a in annotations
+        ]
+        tooltip_data = [
+            {"label_asym_id": a["label_asym_id"], "label_seq_id": a["label_seq_id"], "tooltip": a.get("tooltip", "")}
+            for a in annotations
+        ]
+        data["annot_colors.json"] = json.dumps(color_data).encode("utf-8")
+        data["annot_tooltips.json"] = json.dumps(tooltip_data).encode("utf-8")
+
+    mvs.molstar_streamlit(builder, data=data, height=height)
+
+
 def _render_3d_viewer(
     query: ProteinQuery,
     prediction: PredictionResult,
@@ -591,10 +755,11 @@ def _render_3d_viewer(
     # Color mode selector
     color_modes = [
         "Trust (pLDDT)", "AlphaMissense", "Domains",
-        "Flexibility (ANM)", "NMA Animation", "Binding Pockets",
+        "Flexibility (ANM)", "NMA Animation", "Morph Animation",
+        "Binding Pockets",
         "Charge Surface", "Structure Diff",
         "Conservation", "Hydrophobicity", "Residue Depth",
-        "PSN Communities",
+        "PSN Communities", "Mutation Impact",
     ]
     color_mode = st.radio(
         "Color by:",
@@ -616,6 +781,9 @@ def _render_3d_viewer(
     elif color_mode == "NMA Animation":
         _render_nma_animation(query, prediction, trust_audit)
         return
+    elif color_mode == "Morph Animation":
+        _render_morph_animation(query, prediction, trust_audit)
+        return
     elif color_mode == "Binding Pockets":
         _render_pocket_overlay(query, prediction, trust_audit)
         return
@@ -636,6 +804,9 @@ def _render_3d_viewer(
         return
     elif color_mode == "PSN Communities":
         _render_psn_overlay(query, prediction)
+        return
+    elif color_mode == "Mutation Impact":
+        _render_mutation_energy_delta(query, prediction)
         return
 
     # Default: Trust coloring
@@ -743,6 +914,23 @@ def _render_3d_viewer(
         for a in annotations
     ]
 
+    # Apply guided tour focus (highlight + zoom to selected residues)
+    tour_residues = st.session_state.get("tour_focus")
+    if tour_residues:
+        first_chain_id = prediction.chain_ids[0] if prediction.chain_ids else "A"
+        for res_id in tour_residues:
+            try:
+                focus_comp = structure.component(
+                    selector=mvs.ComponentExpression(
+                        label_asym_id=first_chain_id,
+                        label_seq_id=int(res_id),
+                    )
+                )
+                focus_comp.representation(type="ball_and_stick").color(color="#FF9500")
+                focus_comp.focus()
+            except Exception:
+                pass
+
     # Render with MVSX data archive
     data = {
         "structure.pdb": prediction.pdb_content.encode("utf-8"),
@@ -780,9 +968,9 @@ def _compute_flexibility(pdb_content: str, chain: str | None) -> dict:
 
 
 @st.cache_data(show_spinner="Predicting binding pockets...")
-def _compute_pockets(pdb_content: str) -> dict:
-    from src.pocket_prediction import predict_pockets
-    return predict_pockets(pdb_content)
+def _compute_pockets(pdb_content: str, pdb_id: str | None = None) -> dict:
+    from src.dogsite_pockets import predict_pockets_with_fallback
+    return predict_pockets_with_fallback(pdb_content, pdb_id=pdb_id)
 
 
 @st.cache_data(show_spinner="Generating NMA trajectory...")
@@ -1045,6 +1233,226 @@ def _render_nma_animation(
     _render_provenance_badge(prediction)
 
 
+def _render_morph_animation(
+    query: ProteinQuery,
+    prediction: PredictionResult,
+    trust_audit: TrustAudit,
+):
+    """Render conformational morphing between predicted and AlphaFold structures."""
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+
+    # Need a second structure — AlphaFold reference
+    af_key = f"alphafold_{query.uniprot_id}"
+    af_data = st.session_state.get(af_key)
+
+    if not query.uniprot_id:
+        st.warning(
+            "Morph Animation requires a UniProt ID to fetch the AlphaFold reference. "
+            "Try an example query or enter a UniProt accession."
+        )
+        return
+
+    if af_data is None:
+        st.info(
+            "Morphing shows a smooth trajectory between your predicted structure "
+            "and the AlphaFold reference — revealing conformational differences."
+        )
+        if st.button("Fetch AlphaFold Structure for Morphing", key="fetch_af_morph", type="primary"):
+            from components.alphafold_compare import _fetch_alphafold
+            with st.status("Fetching AlphaFold structure..."):
+                af_data = _fetch_alphafold(query.uniprot_id)
+            if af_data is None:
+                st.error(f"Could not fetch AlphaFold structure for {query.uniprot_id}.")
+                return
+            st.session_state[af_key] = af_data
+        else:
+            return
+
+    af_pdb = af_data.get("pdb_content")
+    if not af_pdb:
+        st.warning("AlphaFold data is missing PDB content.")
+        return
+
+    # Controls
+    ctrl1, ctrl2 = st.columns(2)
+    with ctrl1:
+        n_frames = st.slider(
+            "Frames", min_value=10, max_value=40, value=20, step=2,
+            key="morph_n_frames",
+            help="Number of intermediate frames in the morphing trajectory",
+        )
+    with ctrl2:
+        from src.conformational_morph import compute_morph_rmsd
+        rmsd_val = compute_morph_rmsd(prediction.pdb_content, af_pdb)
+        if rmsd_val is not None:
+            st.metric("CA RMSD", f"{rmsd_val:.2f} A")
+        else:
+            st.metric("CA RMSD", "N/A")
+
+    # Generate trajectory
+    morph_key = f"morph_traj_{query.protein_name}_{n_frames}"
+    morph_pdb = st.session_state.get(morph_key)
+    if morph_pdb is None:
+        from src.conformational_morph import generate_morph_trajectory
+        with st.status("Generating morph trajectory..."):
+            morph_pdb = generate_morph_trajectory(
+                prediction.pdb_content, af_pdb, n_frames=n_frames,
+            )
+        if morph_pdb is None:
+            st.warning(
+                "Could not generate morph trajectory. "
+                "Structures may be too different or have incompatible chains."
+            )
+            return
+        st.session_state[morph_key] = morph_pdb
+
+    # Count frames in the multi-model PDB
+    model_count = morph_pdb.count("MODEL ")
+
+    # Frame selector
+    frame_col1, frame_col2 = st.columns([3, 1])
+    with frame_col1:
+        frame_idx = st.slider(
+            "Morph frame",
+            min_value=0,
+            max_value=max(model_count - 1, 0),
+            value=0,
+            key="morph_frame_idx",
+            help="Slide to morph between Boltz-2 prediction and AlphaFold structure",
+        )
+    with frame_col2:
+        mid = model_count // 2
+        if frame_idx == 0:
+            label = "Prediction (start)"
+        elif frame_idx == mid:
+            label = "AlphaFold (mid)"
+        elif frame_idx == model_count - 1:
+            label = "Prediction (end)"
+        else:
+            label = f"Frame {frame_idx + 1}/{model_count}"
+        st.markdown(f"**{label}**")
+
+    # Render in Mol*
+    builder = mvs.create_builder()
+    parsed = builder.download(url="morph.pdb").parse(format="pdb")
+    struct = parsed.model_structure(model_index=frame_idx)
+    struct.component(selector="polymer").representation(type="cartoon").color(color="bfactor")
+
+    data = {"morph.pdb": morph_pdb.encode("utf-8")}
+    mvs.molstar_streamlit(builder, data=data, height=600)
+
+    st.caption(
+        f"Conformational morph: {model_count} frames | "
+        f"Prediction <-> AlphaFold (looping) | "
+        f"Colored by B-factor/pLDDT"
+    )
+    st.caption(
+        "The morph trajectory linearly interpolates atomic coordinates between "
+        "the two structures after superimposition. Use the slider to see how "
+        "the predicted structure transitions to the AlphaFold reference."
+    )
+
+    # Download button
+    st.download_button(
+        "Download Morph Trajectory (PDB)",
+        morph_pdb,
+        f"{query.protein_name}_morph_trajectory.pdb",
+        mime="chemical/x-pdb",
+        key="download_morph_pdb",
+    )
+
+    _render_provenance_badge(prediction)
+
+
+def _render_guided_tour(
+    query: ProteinQuery,
+    prediction: PredictionResult,
+    trust_audit: TrustAudit | None,
+):
+    """Render guided tour quick-focus buttons for key structural regions."""
+    import re as _re
+
+    # Collect available tour stops
+    stops: list[dict] = [{"label": "Full Structure", "key": "full", "icon": "🔬"}]
+
+    # Mutation site
+    mut_pos = None
+    if query.mutation:
+        m = _re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            stops.append({
+                "label": f"Mutation ({query.mutation})",
+                "key": "mutation",
+                "icon": "🧬",
+                "residues": [mut_pos],
+            })
+
+    # Binding pocket (top pocket)
+    pocket_data = st.session_state.get(f"pockets_{query.protein_name}")
+    if pocket_data and pocket_data.get("pockets"):
+        top_pocket = pocket_data["pockets"][0]
+        pocket_res = top_pocket.get("residues", [])[:10]
+        if pocket_res:
+            stops.append({
+                "label": f"Binding Pocket #{top_pocket.get('rank', 1)}",
+                "key": "pocket",
+                "icon": "💊",
+                "residues": pocket_res,
+            })
+
+    # Low confidence region
+    if prediction.plddt_per_residue and prediction.residue_ids:
+        first_chain = prediction.chain_ids[0] if prediction.chain_ids else None
+        low_res = []
+        for i, (rid, sc) in enumerate(zip(prediction.residue_ids, prediction.plddt_per_residue)):
+            if first_chain and i < len(prediction.chain_ids) and prediction.chain_ids[i] != first_chain:
+                continue
+            if sc < 50:
+                low_res.append(rid)
+        if low_res:
+            # Pick the cluster center
+            center_res = low_res[len(low_res) // 2]
+            stops.append({
+                "label": f"Low Confidence ({len(low_res)} res)",
+                "key": "low_conf",
+                "icon": "⚠️",
+                "residues": low_res[:10],
+            })
+
+    # Hub residues (high centrality)
+    structure_analysis = st.session_state.get("structure_analysis") or {}
+    hub_residues = structure_analysis.get("hub_residues", [])
+    if hub_residues:
+        stops.append({
+            "label": f"Hub Residues ({len(hub_residues)})",
+            "key": "hubs",
+            "icon": "🔗",
+            "residues": hub_residues[:10],
+        })
+
+    if len(stops) <= 1:
+        return  # Only "Full Structure" — not useful to show tour
+
+    # Render tour buttons
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">'
+        '<span style="font-size:0.8em;color:rgba(60,60,67,0.55);font-weight:600">GUIDED TOUR</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(len(stops))
+    for i, stop in enumerate(stops):
+        with cols[i]:
+            if st.button(
+                f"{stop['icon']} {stop['label']}",
+                key=f"tour_{stop['key']}",
+                use_container_width=True,
+            ):
+                st.session_state["tour_focus"] = stop.get("residues")
+                st.session_state["tour_stop"] = stop["key"]
+
+
 def _render_pocket_overlay(
     query: ProteinQuery,
     prediction: PredictionResult,
@@ -1056,7 +1464,11 @@ def _render_pocket_overlay(
     pocket_data = st.session_state.get(pocket_key)
     if pocket_data is None:
         try:
-            pocket_data = _compute_pockets(prediction.pdb_content)
+            # Pass PDB ID for DoGSiteScorer API if available
+            pdb_id = None
+            if prediction.compute_source == "rcsb" and query.uniprot_id:
+                pdb_id = st.session_state.get(f"rcsb_pdb_id_{query.protein_name}")
+            pocket_data = _compute_pockets(prediction.pdb_content, pdb_id=pdb_id)
             st.session_state[pocket_key] = pocket_data
         except Exception as e:
             st.warning(f"Pocket prediction failed: {e}")
@@ -1329,7 +1741,7 @@ def _render_structure_diff(
         ):
             from components.alphafold_compare import _fetch_alphafold
 
-            with st.spinner("Fetching AlphaFold structure..."):
+            with st.status("Fetching AlphaFold structure..."):
                 af_data = _fetch_alphafold(query.uniprot_id)
             if af_data is None:
                 st.error(
@@ -1338,8 +1750,9 @@ def _render_structure_diff(
                 )
                 return
             st.session_state[af_key] = af_data
-            st.rerun()
-        return
+            # Fall through to render comparison inline
+        else:
+            return
 
     af_pdb = af_data.get("pdb_content")
     if not af_pdb:
@@ -1353,7 +1766,7 @@ def _render_structure_diff(
     diff_result = st.session_state.get(diff_key)
     if diff_result is None:
         try:
-            with st.spinner("Aligning structures and computing RMSD..."):
+            with st.status("Aligning structures and computing RMSD..."):
                 diff_result = compare_structures(
                     prediction.pdb_content,
                     af_pdb,
@@ -2330,9 +2743,251 @@ def _render_psn_graph(psn_data: dict, query: ProteinQuery):
         "Stars = hub residues. Diamonds = bridge residues (communication bottlenecks)."
     )
 
+    # Interpretation
+    summary = psn_data.get("summary", {})
+    n_hubs = summary.get("n_hubs", len(hub_set))
+    n_bridges = summary.get("n_bridges", len(bridge_set))
+    n_comms = summary.get("n_communities", len(communities))
 
-def _render_molstar_with_annotations(prediction: PredictionResult, annotations: list[dict]):
-    """Render Mol* with custom color/tooltip annotations."""
+    if query.mutation:
+        import re as _re
+        m = _re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mut_pos = int(m.group(1))
+            mut_bc = betweenness.get(mut_pos, 0)
+            bc_rank = sum(1 for v in betweenness.values() if v > mut_bc)
+            bc_pct = 100 * bc_rank / len(betweenness) if betweenness else 100
+            mut_comm = res_to_comm.get(mut_pos, -1)
+            comm_size = next((c["size"] for c in communities if c["id"] == mut_comm), 0)
+
+            if mut_pos in hub_set:
+                st.error(
+                    f"**{query.mutation} is a network hub** (top {bc_pct:.0f}% centrality) "
+                    f"in module {mut_comm} ({comm_size} residues). Disrupting this position "
+                    f"likely propagates effects across the protein — high allosteric risk."
+                )
+            elif mut_pos in bridge_set:
+                st.error(
+                    f"**{query.mutation} is a bridge residue** — a communication bottleneck "
+                    f"between structural modules. Mutation here may sever allosteric signaling."
+                )
+            elif mut_bc > 0 and bc_pct < 25:
+                st.warning(
+                    f"**{query.mutation} has above-average centrality** (top {bc_pct:.0f}%) "
+                    f"in module {mut_comm}. May moderately affect inter-residue communication."
+                )
+
+    if n_bridges > 0:
+        bridge_residues = [b["residue"] for b in psn_data.get("bridge_residues", [])]
+        st.info(
+            f"**{n_bridges} bridge residue(s)** identified ({', '.join(f'Res {r}' for r in bridge_residues[:5])}) "
+            f"— these bottleneck positions control information flow between the {n_comms} structural modules. "
+            f"Mutations at bridges are prime candidates for allosteric drug design."
+        )
+
+
+def _render_mutation_energy_delta(query: ProteinQuery, prediction: PredictionResult):
+    """Mutation Impact Field — 3D 'shockwave' radiating from the mutation site.
+
+    Colors every residue by the estimated structural impact of the mutation,
+    computed from: distance decay from mutation site, pLDDT confidence,
+    amino acid property disruption, and network centrality.
+
+    This shows how a single mutation's effect ripples across the entire protein —
+    the structural basis for pathogenicity.
+    """
+    import re
+
+    if not query.mutation:
+        st.info(
+            "Select a protein with a mutation (e.g. **TP53 R248W**) to see "
+            "the mutation impact field radiating across the structure."
+        )
+        _render_provenance_badge(prediction)
+        return
+
+    m = re.match(r"([A-Z])(\d+)([A-Z])", query.mutation)
+    if not m:
+        st.warning(f"Cannot parse mutation '{query.mutation}' for impact analysis.")
+        _render_provenance_badge(prediction)
+        return
+
+    wt_aa, mut_pos, mt_aa = m.group(1), int(m.group(2)), m.group(3)
+
+    import io
+    import numpy as np
+    try:
+        import biotite.structure as struc
+        import biotite.structure.io.pdb as pdbio
+    except ImportError:
+        st.warning("Biotite required for mutation impact analysis.")
+        return
+
+    pdb_file = pdbio.PDBFile.read(io.StringIO(prediction.pdb_content))
+    structure = pdb_file.get_structure(model=1)
+    aa_mask = struc.filter_amino_acids(structure)
+    protein = structure[aa_mask]
+    ca = protein[protein.atom_name == "CA"]
+
+    if len(ca) < 5:
+        return
+
+    res_ids = [int(r) for r in ca.res_id]
+    coords = ca.coord
+
+    # Find mutation site coordinates
+    if mut_pos not in res_ids:
+        st.warning(f"Mutation position {mut_pos} not found in structure.")
+        return
+
+    mut_idx = res_ids.index(mut_pos)
+    mut_coord = coords[mut_idx]
+
+    # Amino acid property disruption score
+    _AA_VOLUME = {
+        "G": 60, "A": 88, "V": 140, "L": 166, "I": 166, "P": 112,
+        "F": 189, "W": 227, "M": 162, "S": 89, "T": 116, "C": 108,
+        "Y": 193, "H": 153, "D": 111, "E": 138, "N": 114, "Q": 143,
+        "K": 168, "R": 173,
+    }
+    _AA_CHARGE = {
+        "R": 1, "K": 1, "H": 0.5, "D": -1, "E": -1,
+    }
+    _AA_HYDRO = {
+        "I": 4.5, "V": 4.2, "L": 3.8, "F": 2.8, "C": 2.5, "M": 1.9, "A": 1.8,
+        "G": -0.4, "T": -0.7, "S": -0.8, "W": -0.9, "Y": -1.3, "P": -1.6,
+        "H": -3.2, "E": -3.5, "Q": -3.5, "D": -3.5, "N": -3.5, "K": -3.9, "R": -4.5,
+    }
+
+    vol_delta = abs(_AA_VOLUME.get(wt_aa, 130) - _AA_VOLUME.get(mt_aa, 130)) / 170.0
+    charge_delta = abs(_AA_CHARGE.get(wt_aa, 0) - _AA_CHARGE.get(mt_aa, 0)) / 2.0
+    hydro_delta = abs(_AA_HYDRO.get(wt_aa, 0) - _AA_HYDRO.get(mt_aa, 0)) / 9.0
+
+    # Combined disruption score (0-1)
+    disruption = min(1.0, (vol_delta + charge_delta + hydro_delta) / 2.0)
+
+    # pLDDT at mutation site (lower pLDDT = less confident = bigger impact zone)
+    plddt_lookup = {}
+    if prediction.plddt_per_residue and prediction.residue_ids:
+        for rid, p in zip(prediction.residue_ids, prediction.plddt_per_residue):
+            plddt_lookup[rid] = p
+    mut_plddt = plddt_lookup.get(mut_pos, 70)
+
+    # Distance from mutation to every residue
+    distances = np.linalg.norm(coords - mut_coord, axis=1)
+    max_dist = float(np.max(distances)) if len(distances) > 0 else 30.0
+
+    # Impact field: exponential decay from mutation site
+    # Modified by disruption score and local confidence
+    decay_rate = 0.08 + 0.04 * (1 - mut_plddt / 100)  # Softer decay for low-confidence regions
+    raw_impact = disruption * np.exp(-decay_rate * distances)
+
+    # Boost for network neighbors (if PSN data available)
+    psn_data = st.session_state.get(f"_dashboard_psn_{query.protein_name}")
+    if psn_data and isinstance(psn_data, dict):
+        betweenness = psn_data.get("betweenness", {})
+        for i, r in enumerate(res_ids):
+            bc = betweenness.get(r, 0)
+            if bc > 0.01:  # Hub residues transmit impact more
+                raw_impact[i] = min(1.0, raw_impact[i] * (1 + bc * 5))
+
+    # Normalize to 0-1
+    if raw_impact.max() > 0:
+        impact = raw_impact / raw_impact.max()
+    else:
+        impact = raw_impact
+
+    # Build color annotations: red (high impact) → yellow (medium) → blue (none)
+    first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
+    annotations = []
+    for i, (r, imp) in enumerate(zip(res_ids, impact)):
+        # Red-yellow-blue gradient
+        if imp > 0.5:
+            # Red → Yellow
+            t = (imp - 0.5) * 2
+            red = 255
+            green = int(60 + 195 * (1 - t))
+            blue = int(48 * (1 - t))
+        elif imp > 0.1:
+            # Yellow → Light blue
+            t = (imp - 0.1) / 0.4
+            red = int(100 + 155 * t)
+            green = int(160 + 95 * t)
+            blue = int(220 - 172 * t)
+        else:
+            # Quiet blue-gray
+            red, green, blue = 100, 160, 220
+
+        color = f"#{red:02x}{green:02x}{blue:02x}"
+        dist = distances[i]
+
+        tooltip_parts = [f"Res {r}"]
+        if r == mut_pos:
+            tooltip_parts.append(f"MUTATION SITE: {query.mutation}")
+            tooltip_parts.append(f"Disruption: {disruption:.0%}")
+        else:
+            tooltip_parts.append(f"Impact: {imp:.0%}")
+            tooltip_parts.append(f"Distance from mutation: {dist:.1f} Å")
+        if r in plddt_lookup:
+            tooltip_parts.append(f"pLDDT: {plddt_lookup[r]:.0f}")
+
+        annotations.append({
+            "label_asym_id": first_chain,
+            "label_seq_id": r,
+            "color": color,
+            "tooltip": " | ".join(tooltip_parts),
+        })
+
+    _render_molstar_with_annotations(prediction, annotations)
+
+    # Legend
+    st.markdown(
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">No impact</span>'
+        '<span style="display:inline-block;width:120px;height:12px;border-radius:2px;'
+        'background:linear-gradient(to right,#64A0DC,#FFF030,#FF3B30)"></span>'
+        '<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">High impact</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Metrics
+    n_high = int(np.sum(impact > 0.5))
+    n_medium = int(np.sum((impact > 0.1) & (impact <= 0.5)))
+    impact_radius = float(np.percentile(distances[impact > 0.1], 90)) if np.sum(impact > 0.1) > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Disruption Score", f"{disruption:.0%}",
+                help="Combined volume + charge + hydrophobicity change")
+    col2.metric("High Impact Zone", f"{n_high} residues")
+    col3.metric("Medium Impact Zone", f"{n_medium} residues")
+    col4.metric("Impact Radius", f"{impact_radius:.0f} Å",
+                help="90th percentile distance of affected residues")
+
+    # Interpretation
+    if disruption > 0.6:
+        st.error(
+            f"**{query.mutation} causes severe physicochemical disruption** — "
+            f"volume Δ{vol_delta:.0%}, charge Δ{charge_delta:.0%}, "
+            f"hydrophobicity Δ{hydro_delta:.0%}. The impact field extends "
+            f"to {n_high + n_medium} surrounding residues."
+        )
+    elif disruption > 0.3:
+        st.warning(
+            f"**{query.mutation} causes moderate disruption** — "
+            f"the structural shockwave affects {n_high + n_medium} residues "
+            f"within {impact_radius:.0f} Å."
+        )
+    else:
+        st.info(
+            f"**{query.mutation} is a conservative substitution** — "
+            f"limited structural impact predicted (disruption {disruption:.0%})."
+        )
+
+    _render_provenance_badge(prediction)
+
+
+
     import molviewspec as mvs
 
     builder = mvs.create_builder()
@@ -2447,7 +3102,6 @@ def _render_auto_analyze(query: ProteinQuery, prediction: PredictionResult):
 
         progress.progress(1.0, text="All analyses complete!")
         st.toast("All recommended analyses completed!")
-        st.rerun()
 
     # Show which analyses are already computed
     first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"

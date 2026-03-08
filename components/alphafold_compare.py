@@ -21,7 +21,6 @@ def render_alphafold_comparison(query: ProteinQuery, prediction: PredictionResul
         if st.button("Fetch AlphaFold Prediction", key="af_fetch"):
             af_data = _fetch_alphafold(query.uniprot_id)
             st.session_state[cache_key] = af_data if af_data else "not_found"
-            st.rerun()
         else:
             st.caption(
                 f"Click to fetch AlphaFold's prediction for {query.uniprot_id} "

@@ -826,6 +826,111 @@ def test_trust_color_mapping():
     assert trust_to_label(30) == "Very Low"
 
 
+def test_svg_gather_data_pathogenic_positions_dict():
+    from unittest.mock import patch
+
+    from src.models import PredictionResult, ProteinQuery
+    from src.svg_figures import gather_figure_data
+
+    query = ProteinQuery(
+        protein_name="TP53",
+        mutation="R248W",
+        question_type="druggability",
+    )
+    prediction = PredictionResult(
+        pdb_content="ATOM",
+        confidence_json={},
+        plddt_per_residue=[90.0, 80.0, 70.0],
+        chain_ids=["A", "A", "A"],
+        residue_ids=[1, 2, 3],
+        compute_source="precomputed",
+    )
+    fake_state = {
+        "structure_analysis": {"residue_ids": [1, 2, 3], "sse_counts": {"a": 1, "b": 1, "c": 1}},
+        "variant_data_TP53": {
+            "total": 42,
+            "pathogenic_count": 2,
+            "pathogenic_positions": {248: ["R248W"], 249: ["R249S"]},
+        },
+        "interpretation": "test",
+    }
+
+    with patch("src.svg_figures.st.session_state", fake_state):
+        gathered = gather_figure_data(query, prediction, trust_audit=None, bio_context=None)
+
+    assert gathered["variants"]["total"] == 42
+    assert gathered["variants"]["pathogenic_count"] == 2
+    assert gathered["variants"]["pathogenic_positions"] == [248, 249]
+
+
+def test_svg_gather_data_handles_none_structure_analysis():
+    from unittest.mock import patch
+
+    from src.models import PredictionResult, ProteinQuery
+    from src.svg_figures import gather_figure_data
+
+    query = ProteinQuery(
+        protein_name="SPIKE",
+        mutation=None,
+        question_type="binding",
+    )
+    prediction = PredictionResult(
+        pdb_content="ATOM",
+        confidence_json={},
+        plddt_per_residue=[82.0, 77.0],
+        chain_ids=["A", "A"],
+        residue_ids=[1, 2],
+        compute_source="precomputed",
+    )
+    fake_state = {
+        "structure_analysis": None,
+        "variant_data_SPIKE": {},
+        "interpretation": "",
+    }
+
+    with patch("src.svg_figures.st.session_state", fake_state):
+        gathered = gather_figure_data(query, prediction, trust_audit=None, bio_context=None)
+
+    assert gathered["n_residues"] == 2
+    assert gathered["variants"] in (
+        {},
+        {"total": 0, "pathogenic_count": 0, "pathogenic_positions": []},
+    )
+
+
+def test_pdf_report_returns_bytes():
+    from src.models import PredictionResult, ProteinQuery
+    from src.pdf_report import generate_pdf_report
+
+    query = ProteinQuery(
+        protein_name="TP53",
+        mutation="R248W",
+        question_type="druggability",
+    )
+    prediction = PredictionResult(
+        pdb_content=(
+            "ATOM      1  CA  ALA A   1      11.104  13.207   9.173  1.00 90.00           C\n"
+            "END\n"
+        ),
+        confidence_json={},
+        plddt_per_residue=[90.0],
+        chain_ids=["A"],
+        residue_ids=[1],
+        compute_source="precomputed",
+    )
+
+    pdf_bytes = generate_pdf_report(
+        query=query,
+        prediction=prediction,
+        trust_audit=None,
+        bio_context=None,
+        interpretation="test",
+    )
+
+    assert isinstance(pdf_bytes, bytes)
+    assert len(pdf_bytes) > 1000
+
+
 # ===================================================================
 # 9. COMPONENT IMPORT SMOKE TEST
 # ===================================================================
@@ -974,6 +1079,9 @@ if __name__ == "__main__":
             ("Region confidence", test_region_confidence),
             ("Safe JSON encoder", test_safe_json_encoder),
             ("Trust color mapping", test_trust_color_mapping),
+            ("SVG gather data (pathogenic dict)", test_svg_gather_data_pathogenic_positions_dict),
+            ("SVG gather data (None structure_analysis)", test_svg_gather_data_handles_none_structure_analysis),
+            ("PDF report output type", test_pdf_report_returns_bytes),
         ]),
         ("9. IMPORT SMOKE TEST", [
             ("All components/ import", test_all_components_import),

@@ -120,11 +120,10 @@ def render_playground():
     query: ProteinQuery | None = st.session_state.get("parsed_query")
 
     st.markdown(
-        '<div style="margin-bottom:16px">'
-        '<span style="font-size:1.4rem;font-weight:700">Workspace</span>'
-        '<span style="font-size:0.9rem;color:rgba(60,60,67,0.5);margin-left:10px">'
-        "Compare, overlay, and explore your collected insights"
-        "</span></div>",
+        '<div class="lumi-tab-header">'
+        '<div class="tab-title">Workspace</div>'
+        '<div class="tab-subtitle">Compare, overlay, and explore your collected insights</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -155,7 +154,6 @@ def render_playground():
         if st.button("Clear All", key="playground_clear", type="secondary"):
             st.session_state[_PINNED_KEY] = []
             st.session_state[_PLAN_KEY] = None
-            st.rerun()
 
     st.divider()
 
@@ -233,7 +231,6 @@ def _offer_auto_pins():
                     "flagged_regions": len([r for r in trust_audit.regions if r.flag]),
                 },
             )
-            st.rerun()
 
     with cols[1]:
         if prediction.plddt_per_residue and st.button(
@@ -247,7 +244,6 @@ def _offer_auto_pins():
                 {"plddt": prediction.plddt_per_residue, "residue_ids": prediction.residue_ids},
                 _build_plddt_chart_json(prediction.plddt_per_residue, prediction.residue_ids),
             )
-            st.rerun()
 
     with cols[2]:
         if bio_context and bio_context.disease_associations and st.button(
@@ -263,7 +259,6 @@ def _offer_auto_pins():
                 "finding",
                 {"diseases": diseases},
             )
-            st.rerun()
 
 
 # ── Grid View ──
@@ -335,7 +330,6 @@ def _render_insight_card(item: dict, display_key: int, *, actual_idx: int | None
         pinned_list = st.session_state.get(_PINNED_KEY, [])
         if 0 <= real_idx < len(pinned_list):
             pinned_list.pop(real_idx)
-        st.rerun()
 
 
 def _render_data_preview(data: dict, idx: int):
@@ -507,7 +501,6 @@ def _run_inspire(query: ProteinQuery | None, pinned: list[dict]):
             "correspond to intrinsically disordered regions that may actually be "
             "functional — acting as molecular switches or binding interfaces."
         )
-        st.rerun()
         return
 
     from anthropic import Anthropic
@@ -541,7 +534,6 @@ def _run_inspire(query: ProteinQuery | None, pinned: list[dict]):
         st.session_state["playground_inspiration"] = (
             f"Could not generate inspiration: {e}"
         )
-    st.rerun()
 
 
 # ── Plan Generation ──
@@ -553,12 +545,11 @@ def _run_plan_generation(query: ProteinQuery | None, pinned: list[dict]):
         st.warning("Enter a query in the Search tab first.")
         return
 
-    with st.spinner("Generating experiment plan..."):
+    with st.status("Generating experiment plan...", expanded=False):
         from components.experiment_planner import generate_experiment_plan
 
         plan = generate_experiment_plan(query, pinned)
         st.session_state[_PLAN_KEY] = plan
-    st.rerun()
 
 
 # ── Helpers ──

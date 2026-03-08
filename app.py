@@ -11,10 +11,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# --- Load Custom CSS ---
-_css_path = Path(__file__).parent / "assets" / "style.css"
-if _css_path.exists():
-    st.markdown(f"<style>{_css_path.read_text()}</style>", unsafe_allow_html=True)
+# --- Load Custom CSS (cached to avoid re-reading 56KB file every rerun) ---
+@st.cache_data(show_spinner=False)
+def _load_css() -> str:
+    p = Path(__file__).parent / "assets" / "style.css"
+    return p.read_text() if p.exists() else ""
+
+_css = _load_css()
+if _css:
+    st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
 
 
 # --- Session State Initialization ---
@@ -27,7 +32,7 @@ DEFAULTS = {
     "trust_audit": None,
     "bio_context": None,
     "interpretation": None,
-    "active_tab": 0,
+    "active_tab": "Lumi",
     "pipeline_running": False,
     "chat_messages": [],
     "tamarind_results": {},
@@ -44,6 +49,13 @@ for key, val in DEFAULTS.items():
 
 def reset_results():
     """Clear all downstream results when a new query is submitted."""
+    # Cancel any running background tasks
+    try:
+        from src.task_manager import task_manager
+        task_manager.clear()
+    except Exception:
+        pass
+
     for key in [
         "prediction_result", "trust_audit", "bio_context",
         "interpretation", "stats_data", "stats_results",
@@ -53,8 +65,8 @@ def reset_results():
         "experiment_tracker", "sketch_image_bytes",
         "sketch_interpretation", "comparison_data",
         "playground_inspiration", "esmfold_pdb",
-        "docked_complex_pdb",
-        "_interpretation_attempted",
+        "docked_complex_pdb", "generated_video",
+        "_interpretation_attempted", "_prediction_raw",
     ]:
         st.session_state[key] = None
     st.session_state["chat_messages"] = []
@@ -64,6 +76,7 @@ def reset_results():
         "flexibility_", "pockets_", "struct_analysis_",
         "alphafold_", "biorender_results_", "tamarind_results_",
         "svg_diagram_", "_dashboard_",
+        "_variant_fetch_attempted_", "variant_enrichment_",
     )
     for k in list(st.session_state.keys()):
         if k.startswith(_dynamic_prefixes):
@@ -73,8 +86,8 @@ def reset_results():
 # --- DNA Character SVG (shared between welcome + compact header) ---
 # Stylized double helix with googly eyes — the Pixar lamp of Luminous
 _DNA_SVG_ANIMATED = (
-    '<svg class="dna-char" viewBox="0 0 36 56" width="72" height="107"'
-    ' style="width:72px!important;height:107px!important;min-width:72px;min-height:107px;max-width:none!important;max-height:none!important"'
+    '<svg class="dna-char" viewBox="0 0 36 56" width="80" height="120"'
+    ' style="width:80px!important;height:120px!important;min-width:80px;min-height:120px;max-width:none!important;max-height:none!important"'
     ' xmlns="http://www.w3.org/2000/svg">'
     # ── Shadow ellipse on ground ──
     '<ellipse class="dna-shadow" cx="18" cy="54" rx="8" ry="2"/>'
@@ -156,30 +169,28 @@ _DNA_SVG_STATIC = (
 )
 
 # --- Header ---
-# Compact header when query is loaded; no header when empty (Ask Lumi tab has the big welcome)
+# Always render a stable header slot so the DOM above tabs never shifts.
+_header_slot = st.empty()
 if st.session_state.get("query_parsed"):
-    st.markdown(
-        '<div class="luminous-header" style="padding:0.6rem 0 0.5rem;margin-bottom:0.6rem">'
-        '<div class="lumi-title-compact">'
-        'Lum'
-        '<span class="lumi-i-wrapper">' + _DNA_SVG_STATIC + '</span>'
-        'nous'
-        '</div>'
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    with _header_slot.container():
+        st.markdown(
+            '<div class="luminous-header" style="padding:0.6rem 0 0.5rem;margin-bottom:0.6rem">'
+            '<div class="lumi-title-compact">'
+            'Lum'
+            '<span class="lumi-i-wrapper">' + _DNA_SVG_STATIC + '</span>'
+            'nous'
+            '</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
 # --- Tab Router (Lumi is default/first) ---
-tab_chat, tab_query, tab_structure, tab_context, tab_report, tab_stats, tab_playground, tab_sketch = st.tabs([
-    "Lumi",
-    "Search",
-    "Structure",
-    "Biology",
-    "Report",
-    "Stats",
-    "Workspace",
-    "Sketch",
-])
+_TAB_LABELS = ["Lumi", "Search", "Structure", "Biology", "Report", "Stats", "Workspace", "Sketch"]
+_saved_tab = st.session_state.get("active_tab", "Lumi")
+tab_chat, tab_query, tab_structure, tab_context, tab_report, tab_stats, tab_playground, tab_sketch = st.tabs(
+    _TAB_LABELS,
+    default=_saved_tab if _saved_tab in _TAB_LABELS else None,
+)
 
 with tab_query:
     from components.query_input import render_query_input
@@ -266,6 +277,10 @@ with st.sidebar:
     from components.pipeline_flow import render_text_pipeline
     render_text_pipeline()
 
+    # ── Background Task Poller (runs every 2s as a fragment) ──
+    from components.notification_poller import render_notification_poller
+    render_notification_poller()
+
     # Recompute completed count for Lottie animation check
     _pipeline_keys = [
         ("query_parsed", True),
@@ -283,13 +298,16 @@ with st.sidebar:
     # Loading animation only when pipeline is actively running (not idle/waiting)
     if st.session_state.get("pipeline_running"):
         try:
-            import json
-
             from streamlit_lottie import st_lottie
 
-            lottie_path = Path(__file__).parent / "assets" / "dna_lottie.json"
-            if lottie_path.exists():
-                lottie_data = json.loads(lottie_path.read_text())
+            @st.cache_data(show_spinner=False)
+            def _load_lottie() -> dict | None:
+                import json as _json
+                p = Path(__file__).parent / "assets" / "dna_lottie.json"
+                return _json.loads(p.read_text()) if p.exists() else None
+
+            lottie_data = _load_lottie()
+            if lottie_data:
                 st_lottie(lottie_data, height=80, key="sidebar_dna")
         except ImportError:
             pass  # Lottie not installed — skip gracefully
@@ -324,6 +342,7 @@ with st.sidebar:
         ("Anthropic Claude", "AI interpretation + MCP", _check_key("ANTHROPIC_API_KEY")),
         ("BioRender", "Scientific illustration via MCP", _check_key("BIORENDER_TOKEN")),
         ("Wiley Scholar Gateway", "Full-text journal articles via MCP", True),
+        ("Gemini Veo", "AI protein animation videos", _check_key("GEMINI_API_KEY")),
         ("Modal", "Boltz-2 on H100 GPUs (serverless)", _is_modal_ready()),
         ("MolViewSpec", "Mol* 3D visualization engine", True),
         ("BioMCP", "15+ bio databases (PubMed, ChEMBL, ClinVar)", True),
@@ -358,12 +377,3 @@ with st.sidebar:
         flagged = sum(1 for r in trust.regions if r.flag)
         if flagged:
             st.metric("Flagged Regions", flagged)
-
-# --- Footer ---
-st.markdown(
-    '<div class="sponsor-footer">'
-    "Luminous &mdash; YC Bio x AI Hackathon 2026 &nbsp;|&nbsp; "
-    "Tamarind Bio &bull; Anthropic &bull; BioRender &bull; Wiley &bull; Modal"
-    "</div>",
-    unsafe_allow_html=True,
-)

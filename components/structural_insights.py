@@ -86,63 +86,65 @@ def render_structural_insights(
             st.warning(f"Structural analysis failed: {e}")
             return
 
-    # ── Render all insights ──
-    # Row 1: Key structural metrics
+    # ── Render insights with progressive disclosure ──
+    # Always visible: key metrics + primary visualizations
     _render_mutation_structural_context(analysis, query, prediction)
 
-    # Row 2: SASA profile + confidence distribution
+    # Primary: SASA + confidence (always relevant)
     col1, col2 = st.columns(2)
     with col1:
         _render_sasa_profile(analysis, query, mutation_pos)
     with col2:
         _render_confidence_distribution(prediction)
 
-    # Row 3: 3D distances and clustering
+    # Primary: 3D distances (when mutation present — directly answers "how close?")
     if mutation_pos:
         _render_3d_distance_analysis(analysis, query)
 
     if pathogenic_positions and len(pathogenic_positions) >= 2:
         _render_3d_clustering(analysis)
 
-    # Row 4: Multi-Track Protein Map (full width — the showpiece)
+    # Primary: Multi-Track Protein Map (the showpiece, always visible)
     _render_multi_track_map(analysis, prediction, mutation_pos, pathogenic_positions)
 
-    # Row 5: Contact Map + Packing Density
+    # Cross-Insight Analysis (progressively disclosed)
+    with st.expander("Conservation × Depth Analysis", expanded=bool(mutation_pos)):
+        _render_conservation_depth_scatter(
+            prediction, query, mutation_pos, pathogenic_positions, pocket_residues,
+        )
+        if mutation_pos and pocket_residues:
+            _render_communication_path(prediction, query, mutation_pos, pocket_residues)
+
+    # Contact & Packing (detail on demand)
     has_contact = "contact_map" in analysis
     has_packing = "packing_density" in analysis
     if has_contact or has_packing:
-        col1, col2 = st.columns(2)
-        with col1:
-            if has_contact:
-                _render_contact_map(analysis, pathogenic_positions, mutation_pos)
-        with col2:
-            if has_packing:
-                _render_packing_density(analysis, mutation_pos, pathogenic_positions)
+        with st.expander("Contact Map & Packing Density"):
+            col1, col2 = st.columns(2)
+            with col1:
+                if has_contact:
+                    _render_contact_map(analysis, pathogenic_positions, mutation_pos)
+            with col2:
+                if has_packing:
+                    _render_packing_density(analysis, mutation_pos, pathogenic_positions)
 
-    # Row 6: Ramachandran + Network Centrality
+    # Backbone Geometry & Network (detail on demand)
     has_rama = "ramachandran" in analysis
     has_network = "network_centrality" in analysis
     if has_rama or has_network:
-        col1, col2 = st.columns(2)
-        with col1:
-            if has_rama:
-                _render_ramachandran(analysis, mutation_pos, pathogenic_positions)
-        with col2:
-            if has_network:
-                _render_network_centrality(analysis, mutation_pos, pathogenic_positions)
+        with st.expander("Backbone Geometry & Network Centrality"):
+            col1, col2 = st.columns(2)
+            with col1:
+                if has_rama:
+                    _render_ramachandran(analysis, mutation_pos, pathogenic_positions)
+            with col2:
+                if has_network:
+                    _render_network_centrality(analysis, mutation_pos, pathogenic_positions)
 
-    # Row 7: Conservation × Depth cross-insight (reveals functionally constrained buried residues)
-    _render_conservation_depth_scatter(
-        prediction, query, mutation_pos, pathogenic_positions, pocket_residues,
-    )
-
-    # Row 8: Structural Communication Path (mutation → nearest pocket/active site)
-    if mutation_pos and pocket_residues:
-        _render_communication_path(prediction, query, mutation_pos, pocket_residues)
-
-    # Row 9: Hydrophobic Patch Map (surface clusters for binding site prediction)
+    # Surface Properties (detail on demand, query-relevant)
     if query.question_type in ("druggability", "binding", "structure"):
-        _render_hydrophobic_patches(prediction, query, mutation_pos, pocket_residues)
+        with st.expander("Surface Hydrophobic Patches"):
+            _render_hydrophobic_patches(prediction, query, mutation_pos, pocket_residues)
 
 
 def _get_pocket_residues(protein_name: str) -> list[int]:
@@ -1696,3 +1698,18 @@ def _render_hydrophobic_patches(
                 f"contains the mutation site — mutation may alter surface "
                 f"hydrophobicity and affect protein-protein interactions."
             )
+        else:
+            # Cross-reference with conservation
+            try:
+                from src.conservation import compute_conservation_scores
+                cons_data = compute_conservation_scores(prediction.pdb_content)
+                cons_scores = cons_data.get("conservation_scores", {})
+                conserved_in_patch = [r for r in residues_in_patch if cons_scores.get(r, 5) >= 7]
+                if len(conserved_in_patch) >= 2:
+                    st.info(
+                        f"**Patch {idx + 1}** ({len(patch)} residues, {patch_range}) — "
+                        f"{len(conserved_in_patch)} residues are highly conserved (score ≥7). "
+                        f"Conserved + hydrophobic + surface = strong interaction site signature."
+                    )
+            except Exception:
+                pass

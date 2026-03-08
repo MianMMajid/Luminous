@@ -6,6 +6,119 @@ from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 from src.models import BioContext, PredictionResult, ProteinQuery, TrustAudit
 
 
+# ---------------------------------------------------------------------------
+# Background chat helpers (run agent calls off the main thread)
+# ---------------------------------------------------------------------------
+
+def _run_agent_in_thread(
+    messages: list[dict],
+    session_context: dict,
+    protein_name: str = "",
+) -> dict:
+    """Run agent turn in a background thread. Returns result dict."""
+    try:
+        from src.bio_agent import run_agent_turn
+    except ImportError:
+        return {"assistant_text": _fallback_text(), "tool_calls": []}
+
+    try:
+        assistant_text, tool_calls = run_agent_turn(messages, session_context)
+    except Exception as e:
+        assistant_text = f"I encountered an error: {e}"
+        tool_calls = []
+
+    return {"assistant_text": assistant_text, "tool_calls": tool_calls,
+            "protein_name": protein_name}
+
+
+def _fallback_text() -> str:
+    return (
+        "I need an Anthropic API key to answer follow-up questions. "
+        "Please set `ANTHROPIC_API_KEY` in your `.env` file."
+    )
+
+
+def _submit_chat_background(messages, session_context, query=None):
+    """Submit a chat agent call as a background task (non-blocking)."""
+    from src.task_manager import task_manager
+
+    task_manager.submit(
+        task_id="chat_response",
+        fn=_run_agent_in_thread,
+        kwargs={"messages": messages, "session_context": session_context,
+                "protein_name": query.protein_name if query else ""},
+        label="Lumi is thinking",
+    )
+
+
+def _kick_chat_agent(query, prediction, trust_audit, bio_context):
+    """Build context and submit agent call to background."""
+    import re
+
+    if not ANTHROPIC_API_KEY:
+        st.session_state["chat_messages"].append(
+            {"role": "assistant", "content": _fallback_text()}
+        )
+        return
+
+    mutation_pos = None
+    if query and query.mutation:
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mutation_pos = int(m.group(1))
+
+    session_context = {
+        "query": query,
+        "protein_name": query.protein_name if query else "",
+        "mutation": query.mutation if query else None,
+        "mutation_pos": mutation_pos,
+        "pdb_content": prediction.pdb_content if prediction else "",
+        "trust_audit": trust_audit,
+        "bio_context": bio_context,
+        "confidence_json": {},
+        "variant_data": st.session_state.get(
+            f"variant_data_{query.protein_name}" if query else "", None
+        ),
+    }
+
+    messages = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in st.session_state.get("chat_messages", [])
+        if msg["role"] in ("user", "assistant")
+    ]
+
+    st.session_state["_chat_thinking"] = True
+    _submit_chat_background(messages, session_context, query)
+
+
+def _kick_standalone_agent():
+    """Build context and submit standalone agent call to background."""
+    if not ANTHROPIC_API_KEY:
+        st.session_state["chat_messages"].append(
+            {"role": "assistant", "content": _fallback_text()}
+        )
+        return
+
+    session_context = {
+        "query": None, "protein_name": "", "mutation": None,
+        "mutation_pos": None, "pdb_content": "", "trust_audit": None,
+        "bio_context": None, "confidence_json": {}, "variant_data": None,
+    }
+
+    messages = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in st.session_state.get("chat_messages", [])
+        if msg["role"] in ("user", "assistant")
+    ]
+
+    st.session_state["_chat_thinking"] = True
+    _submit_chat_background(messages, session_context)
+
+
+# ---------------------------------------------------------------------------
+# Main render
+# ---------------------------------------------------------------------------
+
 def render_chat_followup():
     """Tab 7: Conversational AI follow-up — ask Lumi anything about the loaded protein."""
     if not st.session_state.get("query_parsed"):
@@ -21,85 +134,54 @@ def render_chat_followup():
     interpretation: str | None = st.session_state.get("interpretation")
     prediction: PredictionResult | None = st.session_state.get("prediction_result")
 
-    # Agent Mode toggle
-    header_col, toggle_col = st.columns([3, 1])
-    with header_col:
-        st.markdown(
-            f"### Lumi — {query.protein_name}"
-        )
-    with toggle_col:
-        if "agent_mode_toggle" not in st.session_state:
-            st.session_state["agent_mode_toggle"] = True
-        agent_mode = st.toggle(
-            "Agent Mode",
-            key="agent_mode_toggle",
-            help="Agent mode lets Lumi autonomously call analysis tools to answer your question.",
-        )
-
-    # Show available tools when agent mode is on
-    if agent_mode:
-        _render_tool_badges()
-
-    # Initialize chat history
     if "chat_messages" not in st.session_state:
         st.session_state["chat_messages"] = []
 
-    # Suggestion pills (Judge UI style)
-    suggestions = _get_suggestions(query, trust_audit)
-    if not st.session_state["chat_messages"]:
-        pills_html = "".join(
-            f'<span class="lumi-pill" style="cursor:default">{s}</span>'
-            for s in suggestions[:4]
+    # Suggestion pills (native Streamlit pills — compact, clickable)
+    if not st.session_state["chat_messages"] and not st.session_state.get("_chat_thinking"):
+        suggestions = _get_suggestions(query, trust_audit)
+        short = [s[:55] + "..." if len(s) > 55 else s for s in suggestions[:4]]
+        picked = st.pills(
+            "Suggestions", short,
+            key="chat_suggest_pills",
+            label_visibility="collapsed",
         )
-        st.markdown(
-            f'<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;'
-            f'margin:12px 0 16px">{pills_html}</div>',
-            unsafe_allow_html=True,
+        if picked:
+            idx = short.index(picked)
+            full = suggestions[idx]
+            st.session_state["chat_messages"].append({"role": "user", "content": full})
+            _kick_chat_agent(query, prediction, trust_audit, bio_context)
+            st.rerun()
+
+    # Chat history (includes thinking bubble if agent is working)
+    if st.session_state["chat_messages"] or st.session_state.get("_chat_thinking"):
+        _render_chat_bubbles(
+            st.session_state["chat_messages"],
+            thinking=st.session_state.get("_chat_thinking", False),
         )
-        cols = st.columns(min(len(suggestions), 4))
-        for i, (col, suggestion) in enumerate(zip(cols, suggestions[:4])):
-            if col.button(
-                suggestion[:40] + ("..." if len(suggestion) > 40 else ""),
-                key=f"chat_suggest_{i}",
-                use_container_width=True,
-            ):
-                st.session_state["chat_messages"].append(
-                    {"role": "user", "content": suggestion}
-                )
-                if agent_mode:
-                    _generate_agent_response(query, prediction, trust_audit, bio_context)
-                else:
-                    _generate_response(query, trust_audit, bio_context, interpretation)
-                st.rerun()
 
-    # Render chat history as iMessage-style bubbles
-    if st.session_state["chat_messages"]:
-        _render_chat_bubbles(st.session_state["chat_messages"])
-
-    # Chat input (Streamlit's built-in, pinned to bottom)
-    if prompt := st.chat_input(f"Ask about {query.protein_name}..."):
-        st.session_state["chat_messages"].append({"role": "user", "content": prompt})
-
-        # Show typing indicator then generate response
-        if agent_mode:
-            with st.spinner("Lumi is thinking..."):
-                _generate_agent_response(
-                    query, prediction, trust_audit, bio_context
-                )
-        else:
-            with st.spinner("Lumi is thinking..."):
-                _generate_response(
-                    query, trust_audit, bio_context, interpretation
-                )
-        st.rerun()
+    # Compact toolbar + input
+    _render_composer_toolbar()
+    if prompt := st.chat_input(
+        f"Ask about {query.protein_name}...",
+        accept_file="multiple",
+        file_type=["pdb", "cif", "fasta", "fa", "csv", "tsv", "png", "jpg", "jpeg", "txt"],
+    ):
+        text = prompt.text if hasattr(prompt, "text") else str(prompt)
+        if hasattr(prompt, "files") and prompt.files:
+            _handle_uploaded_files(prompt.files)
+        if text.strip():
+            st.session_state["chat_messages"].append({"role": "user", "content": text})
+            _kick_chat_agent(query, prediction, trust_audit, bio_context)
+            st.rerun()
 
 
 def _render_welcome_empty():
     """Show welcome state when no query is parsed — DNA Pixar animation + chat intro."""
     # DNA character SVG (animated version for this welcome screen)
     _dna_svg = (
-        '<svg class="dna-char" viewBox="0 0 36 56" width="72" height="107"'
-        ' style="width:72px!important;height:107px!important;min-width:72px;min-height:107px;max-width:none!important;max-height:none!important"'
+        '<svg class="dna-char" viewBox="0 0 36 56" width="80" height="120"'
+        ' style="width:80px!important;height:120px!important;min-width:80px;min-height:120px;max-width:none!important;max-height:none!important"'
         ' xmlns="http://www.w3.org/2000/svg">'
         '<ellipse class="dna-shadow" cx="18" cy="54" rx="8" ry="2"/>'
         '<g class="dna-body-group">'
@@ -138,8 +220,8 @@ def _render_welcome_empty():
     )
 
     st.markdown(
+        '<div class="lumi-welcome-page">'
         '<div class="lumi-welcome">'
-        # DNA Pixar title: "Lum[DNA]nous"
         '<div class="lumi-title">'
         'Lum'
         '<span class="lumi-i-wrapper">'
@@ -149,25 +231,54 @@ def _render_welcome_empty():
         'nous'
         '</div>'
         '<p class="lumi-welcome-sub">'
-        "I'm Lumi, your assistant scientist. Load a protein in the <b>Search</b> tab "
-        "for full structural analysis, or ask me anything below — I can query UniProt, "
-        "AlphaFold, gnomAD, PubChem, STRING, and more in real time."
-        "</p>"
-        '<div class="lumi-welcome-pills">'
-        '<span class="lumi-pill">Tell me about TP53 and its role in cancer</span>'
-        '<span class="lumi-pill">What drugs target EGFR?</span>'
-        '<span class="lumi-pill">Is KRAS G12C druggable?</span>'
-        '<span class="lumi-pill">Find recent papers on BRCA1 structure</span>'
-        "</div>"
-        "</div>",
+        "Hey, I'm Lumi! Ask me anything about proteins, mutations, or drugs "
+        "&mdash; I'll search the databases and figure it out together."
+        '</p>'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
-    # Allow chat even without loaded protein (agent mode with online tools)
-    _render_standalone_chat()
+    # Claude Analysis tip
+    st.markdown(
+        '<div style="text-align:center;margin:8px 0 16px;font-size:0.82rem;'
+        'color:rgba(60,60,67,0.5);padding:0 16px;max-width:520px;margin-left:auto;margin-right:auto">'
+        'Have CSV data? Head to the <b>Stats</b> tab for '
+        '<span style="color:#648FFF;font-weight:600">Claude Analysis</span> '
+        '— describe any statistical test in plain English.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Centered suggestions (no column wrapper — pills center via CSS, wrap on small screens)
+    if not st.session_state.get("_chat_thinking"):
+        _welcome_suggestions = [
+            "Tell me about TP53 and its role in cancer",
+            "What drugs target EGFR?",
+            "Is KRAS G12C druggable?",
+        ]
+        picked = st.pills(
+            "Suggestions", _welcome_suggestions,
+            key="welcome_suggest_pills",
+            label_visibility="collapsed",
+        )
+        if picked:
+            st.session_state["chat_messages"] = [{"role": "user", "content": picked}]
+            _kick_standalone_agent()
+            st.rerun()
+
+    # Show thinking indicator if agent is working
+    if st.session_state.get("_chat_thinking"):
+        _render_chat_bubbles(
+            st.session_state.get("chat_messages", []),
+            thinking=True,
+        )
+
+    # Chat input
+    _render_standalone_chat_input_only()
 
 
-def _render_chat_bubbles(messages: list[dict]):
+def _render_chat_bubbles(messages: list[dict], *, thinking: bool = False):
     """Render chat history as iMessage-style bubbles with scroll safety."""
     import html as html_mod
 
@@ -209,6 +320,16 @@ def _render_chat_bubbles(messages: list[dict]):
                 f'<div class="lumi-bubble assistant">{safe}</div>'
             )
 
+    # Animated thinking bubble when agent is working in background
+    if thinking:
+        bubble_parts.append(
+            '<div class="lumi-bubble assistant lumi-thinking">'
+            '<span class="lumi-thinking-dots">'
+            '<span></span><span></span><span></span>'
+            '</span>'
+            '</div>'
+        )
+
     all_bubbles = "\n".join(bubble_parts)
     st.markdown(
         f'<div class="lumi-chat-container">{all_bubbles}</div>',
@@ -222,66 +343,172 @@ def _render_chat_bubbles(messages: list[dict]):
     )
 
 
+def _handle_uploaded_files(files):
+    """Store uploaded files from chat_input into session state."""
+    for f in files:
+        name = f.name.lower()
+        data = f.read()
+        if name.endswith((".pdb", ".cif", ".mmcif")):
+            st.session_state["_uploaded_pdb"] = data.decode(errors="replace")
+        elif name.endswith((".fasta", ".fa")):
+            st.session_state["_uploaded_sequence"] = data.decode(errors="replace")
+        elif name.endswith((".csv", ".tsv")):
+            import pandas as pd
+            sep = "\t" if name.endswith(".tsv") else ","
+            import io
+            st.session_state["_uploaded_data"] = pd.read_csv(io.BytesIO(data), sep=sep)
+        elif name.endswith((".png", ".jpg", ".jpeg")):
+            st.session_state["_uploaded_image"] = data
+
+
+# ── MCP-style tool categories ──────────────────────────────────────────
+# Each tool: (id, display_name, short_description)
+_TOOL_CATEGORIES = {
+    "Structure": {
+        "color": "#34C759",
+        "tools": [
+            ("analyze_structure", "Structural Analysis", "SASA, contacts, packing, Ramachandran"),
+            ("build_trust_audit", "Trust Audit", "pLDDT confidence, flagged regions"),
+            ("predict_pockets", "Binding Pockets", "Druggable site detection"),
+            ("compute_flexibility", "Flexibility", "ANM normal-mode dynamics"),
+            ("compute_surface_properties", "Surface Properties", "Hydrophobicity, charge"),
+            ("compute_conservation", "Conservation", "Evolutionary residue scores"),
+            ("compute_residue_depth", "Residue Depth", "Distance from surface"),
+            ("predict_disorder", "Disorder Regions", "Intrinsically disordered segments"),
+            ("predict_ptm_sites", "PTM Sites", "Post-translational modification prediction"),
+        ],
+    },
+    "Databases": {
+        "color": "#007AFF",
+        "tools": [
+            ("get_protein_info", "UniProt", "Function, domains, GO terms"),
+            ("lookup_alphafold", "AlphaFold DB", "Pre-computed structure + pLDDT"),
+            ("predict_variant_effect", "Ensembl VEP", "SIFT, PolyPhen pathogenicity"),
+            ("check_population_frequency", "gnomAD", "Allele frequency, gene constraint"),
+            ("get_interaction_network", "STRING", "Protein-protein interactions"),
+            ("classify_domains", "InterPro", "Domain architecture, families"),
+            ("lookup_compound", "PubChem", "Drug properties, Lipinski rules"),
+            ("get_pharmacogenomics", "PharmGKB", "Drug-gene clinical annotations"),
+            ("search_pdb_structures", "RCSB PDB", "Experimental structures"),
+        ],
+    },
+    "Literature": {
+        "color": "#5856D6",
+        "tools": [
+            ("search_literature", "Semantic Scholar", "Papers with citation metrics"),
+            ("search_open_access_literature", "Europe PMC", "Open-access full-text"),
+            ("fetch_bio_context", "BioMCP Context", "PubMed + Open Targets + ChEMBL"),
+        ],
+    },
+    "AI & Design": {
+        "color": "#FF9500",
+        "tools": [
+            ("fold_sequence", "ESMFold", "Predict structure from sequence"),
+            ("generate_hypotheses", "Hypothesis Engine", "Testable scientific claims"),
+            ("search_variants", "Variant Search", "ClinVar pathogenic variants"),
+            ("compare_structures", "Structure Compare", "RMSD, per-residue deviation"),
+            ("auto_investigate", "Auto-Investigate", "Multi-step deep analysis"),
+        ],
+    },
+    "Illustration": {
+        "color": "#FF6B35",
+        "tools": [
+            ("search_biorender_templates", "BioRender Templates", "Scientific figure templates"),
+            ("search_biorender_icons", "BioRender Icons", "Molecular illustration assets"),
+            ("generate_figure_prompt", "Figure Prompt", "AI figure composition"),
+        ],
+    },
+}
+
+
+def _render_composer_toolbar():
+    """MCP-style categorized tool browser + file attach."""
+    # Count total tools
+    total = sum(len(cat["tools"]) for cat in _TOOL_CATEGORIES.values())
+
+    with st.expander(f"Lumi's Tools ({total})", expanded=False):
+        for cat_name, cat_data in _TOOL_CATEGORIES.items():
+            color = cat_data["color"]
+            tools = cat_data["tools"]
+
+            # Category header
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:6px;'
+                f'margin:12px 0 6px;padding-bottom:4px;'
+                f'border-bottom:1px solid rgba(0,0,0,0.05)">'
+                f'<span style="width:8px;height:8px;border-radius:50%;'
+                f'background:{color};display:inline-block;flex-shrink:0"></span>'
+                f'<span style="font-size:0.78rem;font-weight:700;'
+                f'color:rgba(60,60,67,0.6);text-transform:uppercase;'
+                f'letter-spacing:0.4px">{cat_name}</span>'
+                f'<span style="font-size:0.72rem;color:rgba(60,60,67,0.35);'
+                f'margin-left:auto">{len(tools)}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Tool rows — 2-column grid for compact layout
+            for i in range(0, len(tools), 2):
+                cols = st.columns(2, gap="small")
+                for j, col in enumerate(cols):
+                    idx = i + j
+                    if idx >= len(tools):
+                        break
+                    _tid, name, desc = tools[idx]
+                    col.markdown(
+                        f'<div style="display:flex;align-items:baseline;gap:5px;'
+                        f'padding:4px 0">'
+                        f'<span style="font-size:0.84rem;font-weight:600;'
+                        f'color:{color};white-space:nowrap">{name}</span>'
+                        f'<span style="font-size:0.75rem;color:rgba(60,60,67,0.45);'
+                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                        f'{desc}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+    # ── Attach files ──
+    with st.expander("Attach files", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            pdb_file = st.file_uploader(
+                "Structure (PDB/CIF)", type=["pdb", "cif", "mmcif"],
+                key="_attach_pdb",
+            )
+            if pdb_file:
+                st.session_state["_uploaded_pdb"] = pdb_file.getvalue().decode(errors="replace")
+                st.success(f"Loaded {pdb_file.name}")
+            csv_file = st.file_uploader(
+                "Data (CSV/TSV)", type=["csv", "tsv"],
+                key="_attach_csv",
+            )
+            if csv_file:
+                import pandas as pd
+                try:
+                    sep = "\t" if csv_file.name.endswith(".tsv") else ","
+                    st.session_state["_uploaded_data"] = pd.read_csv(csv_file, sep=sep)
+                    st.success(f"Loaded {csv_file.name}")
+                except Exception as e:
+                    st.error(f"Could not parse: {e}")
+        with c2:
+            seq_file = st.file_uploader(
+                "Sequence (FASTA)", type=["fasta", "fa", "txt"],
+                key="_attach_seq",
+            )
+            if seq_file:
+                st.session_state["_uploaded_sequence"] = seq_file.getvalue().decode(errors="replace")
+                st.success(f"Loaded {seq_file.name}")
+            img_file = st.file_uploader(
+                "Image (PNG/JPG)", type=["png", "jpg", "jpeg"],
+                key="_attach_img",
+            )
+            if img_file:
+                st.session_state["_uploaded_image"] = img_file.getvalue()
+                st.success(f"Loaded {img_file.name}")
+
+
 def _render_tool_badges():
-    """Show available agent tools as a compact dropdown with descriptions."""
-    try:
-        from src.bio_agent import get_tool_schemas
-        tools = get_tool_schemas()
-    except ImportError:
-        return
-
-    if not tools:
-        return
-
-    local_tools = {
-        "analyze_structure", "build_trust_audit", "predict_pockets",
-        "compute_flexibility", "generate_hypotheses", "search_variants",
-        "fetch_bio_context", "compute_surface_properties", "predict_ptm_sites",
-        "compute_conservation", "predict_disorder", "compare_structures",
-        "auto_investigate", "build_protein_network", "find_communication_path",
-        "compute_residue_depth",
-    }
-    biorender_tools = {
-        "search_biorender_templates", "search_biorender_icons",
-        "generate_figure_prompt",
-    }
-
-    # Split into categories
-    local = [t for t in tools if t["name"] in local_tools]
-    biorender = [t for t in tools if t["name"] in biorender_tools]
-    online = [t for t in tools if t["name"] not in local_tools and t["name"] not in biorender_tools]
-
-    def _tool_row(t: dict, icon: str, color: str) -> str:
-        desc = t["description"][:80] + ("..." if len(t["description"]) > 80 else "")
-        return (
-            f'<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;'
-            f'border-bottom:1px solid rgba(0,0,0,0.04)">'
-            f'<span style="font-size:0.82rem;font-weight:600;color:{color};'
-            f'white-space:nowrap">{icon} {t["name"]}</span>'
-            f'<span style="font-size:0.75rem;color:rgba(60,60,67,0.5)">{desc}</span></div>'
-        )
-
-    def _section_header(title: str) -> str:
-        return (
-            f'<div style="font-size:0.78rem;font-weight:600;color:rgba(60,60,67,0.5);'
-            f'text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px">{title}</div>'
-        )
-
-    with st.expander(f"Lumi's Tools ({len(tools)})"):
-        if local:
-            st.markdown(_section_header("Local Analysis"), unsafe_allow_html=True)
-            for t in local:
-                st.markdown(_tool_row(t, "&#128300;", "#000"), unsafe_allow_html=True)
-
-        if online:
-            st.markdown(_section_header("Online Databases"), unsafe_allow_html=True)
-            for t in online:
-                st.markdown(_tool_row(t, "&#127760;", "#2563EB"), unsafe_allow_html=True)
-
-        if biorender:
-            st.markdown(_section_header("BioRender Illustrations"), unsafe_allow_html=True)
-            for t in biorender:
-                st.markdown(_tool_row(t, "&#127912;", "#FF6B35"), unsafe_allow_html=True)
+    """MCP-style tool browser."""
+    _render_composer_toolbar()
 
 
 def _get_suggestions(
@@ -324,212 +551,120 @@ def _get_suggestions(
     return suggestions[:6]
 
 
-def _generate_agent_response(
-    query: ProteinQuery,
-    prediction: PredictionResult | None,
-    trust_audit: TrustAudit | None,
-    bio_context: BioContext | None,
+def _get_biorender_suggestion_for_tools(
+    tool_calls: list[dict],
+    query: ProteinQuery | None = None,
 ) -> str:
-    """Generate response using Claude Agent SDK with tool use."""
-    if not ANTHROPIC_API_KEY:
-        return _fallback_response()
+    """Generate contextual BioRender template suggestion based on agent tool usage."""
+    if not tool_calls:
+        return ""
 
-    try:
-        from src.bio_agent import run_agent_turn
-    except ImportError:
-        # Fall back to simple chat if agent SDK not available
-        return _generate_response(query, trust_audit, bio_context, None)
+    tools_used = {tc.get("tool", "") for tc in tool_calls}
+    if tools_used & {"search_biorender_templates", "search_biorender_icons", "generate_figure_prompt"}:
+        return ""
 
-    import re
+    _BR = "https://www.biorender.com"
+    suggestions: list[tuple[str, str]] = []
 
-    # Build session context from loaded data
-    mutation_pos = None
-    if query.mutation:
-        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
-        if m:
-            mutation_pos = int(m.group(1))
+    if "lookup_compound" in tools_used or "get_pharmacogenomics" in tools_used:
+        suggestions.append(("Drug Mechanism of Action", f"{_BR}/template/daptomycin-mechanism-of-action"))
+        suggestions.append(("Drug Discovery Pipeline", f"{_BR}/template/drug-discovery-development-funnel"))
+    if "get_interaction_network" in tools_used:
+        suggestions.append(("Protein-Protein Interaction Network", f"{_BR}/template/protein-protein-interaction-ppi-network"))
+    if "predict_variant_effect" in tools_used or "check_population_frequency" in tools_used:
+        suggestions.append(("Site-Directed Mutagenesis", f"{_BR}/template/site-directed-mutagenesis"))
+    if "predict_pockets" in tools_used:
+        suggestions.append(("Protein-Ligand Binding", f"{_BR}/template/protein-ligand-binding"))
+    if "get_protein_info" in tools_used or "classify_domains" in tools_used:
+        suggestions.append(("Protein Structure", f"{_BR}/template/protein-structure"))
 
-    session_context = {
-        "query": query,
-        "protein_name": query.protein_name,
-        "mutation": query.mutation,
-        "mutation_pos": mutation_pos,
-        "pdb_content": prediction.pdb_content if prediction else "",
-        "trust_audit": trust_audit,
-        "bio_context": bio_context,
-        "confidence_json": {},
-        "variant_data": st.session_state.get(f"variant_data_{query.protein_name}"),
-    }
+    if not suggestions:
+        return ""
 
-    # Build messages (only user/assistant, skip tool_calls entries)
-    messages = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in st.session_state["chat_messages"]
-        if msg["role"] in ("user", "assistant")
-    ]
+    links = " | ".join(f"[{name}]({url})" for name, url in suggestions[:3])
+    return f"\n\n**Create a figure:** {links} (BioRender)"
 
-    try:
-        assistant_text, tool_calls = run_agent_turn(messages, session_context)
-    except Exception as e:
-        assistant_text = f"Agent encountered an error: {e}. Falling back to simple mode."
-        tool_calls = []
 
-    # Record tool calls in chat history for display
-    if tool_calls:
-        st.session_state["chat_messages"].append({
-            "role": "tool_calls",
-            "calls": tool_calls,
-        })
-
-    # Auto-append BioRender suggestions if relevant tools were called
-    biorender_suggestion = _get_biorender_suggestion_for_tools(tool_calls, query)
-    if biorender_suggestion:
-        assistant_text += biorender_suggestion
-
-    # Append attribution
-    attribution = (
-        "\n\n---\n"
-        "*Powered by Anthropic Claude Agent SDK "
-        "| Structure via Tamarind Bio / Modal "
-        "| Context via BioMCP | Figures via BioRender*"
-    )
-    display_text = assistant_text + attribution
+def _fallback_response() -> str:
+    msg = _fallback_text()
     st.session_state["chat_messages"].append(
-        {"role": "assistant", "content": display_text}
+        {"role": "assistant", "content": msg}
     )
-    return display_text
+    return msg
 
 
-def _generate_response(
-    query: ProteinQuery,
-    trust_audit: TrustAudit | None,
-    bio_context: BioContext | None,
-    interpretation: str | None,
-) -> str:
-    """Generate Claude response with citations and streaming."""
-    if not ANTHROPIC_API_KEY:
-        return _fallback_response()
+def _render_standalone_chat_input_only():
+    """Render just the chat input + history — no duplicate suggestions or tool badges."""
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = []
 
-    from anthropic import Anthropic
+    # Show chat history
+    if st.session_state["chat_messages"] and not st.session_state.get("_chat_thinking"):
+        _render_chat_bubbles(st.session_state["chat_messages"])
 
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
-    system = _build_system_prompt(query, trust_audit, bio_context, interpretation)
+    # Chat input with attach button
+    if prompt := st.chat_input(
+        "Ask anything about proteins, drugs, variants...",
+        accept_file="multiple",
+        file_type=["pdb", "cif", "fasta", "fa", "csv", "tsv", "png", "jpg", "jpeg", "txt"],
+    ):
+        text = prompt.text if hasattr(prompt, "text") else str(prompt)
+        if hasattr(prompt, "files") and prompt.files:
+            _handle_uploaded_files(prompt.files)
+        if text.strip():
+            st.session_state["chat_messages"].append({"role": "user", "content": text})
+            _kick_standalone_agent()
+            st.rerun()
 
-    # Build user content with citation documents
-    documents = _build_chat_documents(bio_context, interpretation)
 
-    # Build messages — inject documents into the latest user message
-    raw_messages = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in st.session_state["chat_messages"]
-        if msg["role"] in ("user", "assistant")
-    ]
+def _render_standalone_chat():
+    """Render chat interface when no protein is loaded — uses online tools only."""
+    _render_tool_badges()
 
-    if raw_messages and documents:
-        # Add documents to the last user message
-        last_user_text = raw_messages[-1]["content"]
-        raw_messages[-1]["content"] = [
-            *documents,
-            {"type": "text", "text": last_user_text},
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = []
+
+    # Suggestion buttons for empty state
+    if not st.session_state["chat_messages"] and not st.session_state.get("_chat_thinking"):
+        standalone_suggestions = [
+            "Tell me about TP53 — function, domains, and disease links",
+            "What drugs target EGFR? Show me their properties and suggest a figure",
+            "Is the KRAS G12C mutation clinically significant?",
+            "Find BRCA1 interaction partners and suggest a pathway diagram",
         ]
-
-    # Stream the response for real-time UX
-    try:
-        assistant_text = ""
-        sources: list[str] = []
-        source_map: dict[str, int] = {}
-
-        with client.messages.stream(
-            model=CLAUDE_MODEL,
-            max_tokens=2048,
-            system=system,
-            messages=raw_messages,
-        ) as stream:
-            for event in stream:
-                pass  # consume stream
-            response = stream.get_final_message()
-
-        # Format response with citation footnotes
-        for block in response.content:
-            if not hasattr(block, "text"):
-                continue
-            citations = getattr(block, "citations", None) or []
-            if citations:
-                refs = []
-                for cite in citations:
-                    doc_title = getattr(
-                        cite, "document_title", None
-                    ) or "Source"
-                    cited_text = getattr(
-                        cite, "cited_text", None
-                    ) or ""
-                    key = f"{doc_title}:{cited_text[:80]}"
-                    if key not in source_map:
-                        source_map[key] = len(sources) + 1
-                        excerpt = (
-                            cited_text[:100] + "..."
-                            if len(cited_text) > 100
-                            else cited_text
-                        )
-                        sources.append(
-                            f"**[{source_map[key]}]** "
-                            f"*{doc_title}* — \"{excerpt}\""
-                        )
-                    refs.append(str(source_map[key]))
-                ref_str = ",".join(refs)
-                assistant_text += f"{block.text} [{ref_str}]"
-            else:
-                assistant_text += block.text
-
-        if sources:
-            assistant_text += "\n\n---\n**Sources:** "
-            assistant_text += " | ".join(
-                f"[{i+1}] *{s.split('*')[1]}*"
-                if '*' in s else f"[{i+1}]"
-                for i, s in enumerate(sources)
-            )
-    except Exception as e:
-        # Fallback to non-streaming, non-citation call
-        err = str(e)
-        if "credit balance" in err.lower() or "billing" in err.lower():
-            assistant_text = (
-                "Anthropic API credits exhausted. "
-                "Please add credits at [console.anthropic.com](https://console.anthropic.com)."
-            )
-        else:
-            try:
-                response = client.messages.create(
-                    model=CLAUDE_MODEL,
-                    max_tokens=2048,
-                    system=system,
-                    messages=[
-                        {"role": msg["role"], "content": msg["content"]}
-                        for msg in st.session_state["chat_messages"]
-                        if msg["role"] in ("user", "assistant")
-                    ],
+        cols = st.columns(2)
+        for i, suggestion in enumerate(standalone_suggestions):
+            if cols[i % 2].button(
+                suggestion[:50] + ("..." if len(suggestion) > 50 else ""),
+                key=f"standalone_suggest_{i}",
+                use_container_width=True,
+            ):
+                st.session_state["chat_messages"].append(
+                    {"role": "user", "content": suggestion}
                 )
-                assistant_text = response.content[0].text if response.content else "No response generated."
-            except Exception as e2:
-                err2 = str(e2)
-                if "credit balance" in err2.lower() or "billing" in err2.lower():
-                    assistant_text = (
-                        "Anthropic API credits exhausted. "
-                        "Please add credits at [console.anthropic.com](https://console.anthropic.com)."
-                    )
-                else:
-                    assistant_text = f"I encountered an error: {err2[:200]}"
+                _kick_standalone_agent()
+                st.rerun()
 
-    attribution = (
-        "\n\n---\n"
-        "*Powered by Anthropic Claude (Citations API) "
-        "| Structure via Tamarind Bio / Modal "
-        "| Context via BioMCP*"
-    )
-    display_text = assistant_text + attribution
-    st.session_state["chat_messages"].append(
-        {"role": "assistant", "content": display_text}
-    )
-    return display_text
+    # Show chat history (with thinking bubble if active)
+    if st.session_state["chat_messages"] or st.session_state.get("_chat_thinking"):
+        _render_chat_bubbles(
+            st.session_state["chat_messages"],
+            thinking=st.session_state.get("_chat_thinking", False),
+        )
+
+    # Chat input with attach button
+    if prompt := st.chat_input(
+        "Ask anything about proteins, drugs, variants...",
+        accept_file="multiple",
+        file_type=["pdb", "cif", "fasta", "fa", "csv", "tsv", "png", "jpg", "jpeg", "txt"],
+    ):
+        text = prompt.text if hasattr(prompt, "text") else str(prompt)
+        if hasattr(prompt, "files") and prompt.files:
+            _handle_uploaded_files(prompt.files)
+        if text.strip():
+            st.session_state["chat_messages"].append({"role": "user", "content": text})
+            _kick_standalone_agent()
+            st.rerun()
 
 
 def _build_chat_documents(
@@ -698,176 +833,3 @@ def _build_system_prompt(
         parts.append(interpretation[:1000])
 
     return "\n".join(parts)
-
-
-def _get_biorender_suggestion_for_tools(
-    tool_calls: list[dict],
-    query: ProteinQuery | None = None,
-) -> str:
-    """Generate contextual BioRender template suggestion based on agent tool usage.
-
-    Returns markdown string to append to response, or empty string.
-    """
-    if not tool_calls:
-        return ""
-
-    # Don't suggest if BioRender tools were already called
-    tools_used = {tc.get("tool", "") for tc in tool_calls}
-    if tools_used & {"search_biorender_templates", "search_biorender_icons", "generate_figure_prompt"}:
-        return ""
-
-    _BR = "https://www.biorender.com"
-
-    # Map tool usage to relevant BioRender templates
-    suggestions: list[tuple[str, str]] = []
-
-    if "lookup_compound" in tools_used or "get_pharmacogenomics" in tools_used:
-        suggestions.append((
-            "Drug Mechanism of Action",
-            f"{_BR}/template/daptomycin-mechanism-of-action",
-        ))
-        suggestions.append((
-            "Drug Discovery Pipeline",
-            f"{_BR}/template/drug-discovery-development-funnel",
-        ))
-
-    if "get_interaction_network" in tools_used:
-        suggestions.append((
-            "Protein-Protein Interaction Network",
-            f"{_BR}/template/protein-protein-interaction-ppi-network",
-        ))
-
-    if "predict_variant_effect" in tools_used or "check_population_frequency" in tools_used:
-        suggestions.append((
-            "Site-Directed Mutagenesis",
-            f"{_BR}/template/site-directed-mutagenesis",
-        ))
-
-    if "predict_pockets" in tools_used:
-        suggestions.append((
-            "Protein-Ligand Binding",
-            f"{_BR}/template/protein-ligand-binding",
-        ))
-
-    if "get_protein_info" in tools_used or "classify_domains" in tools_used:
-        suggestions.append((
-            "Protein Structure",
-            f"{_BR}/template/protein-structure",
-        ))
-
-    if not suggestions:
-        return ""
-
-    # Format as compact markdown
-    links = " | ".join(f"[{name}]({url})" for name, url in suggestions[:3])
-    return f"\n\n**Create a figure:** {links} (BioRender)"
-
-
-def _fallback_response() -> str:
-    msg = (
-        "I need an Anthropic API key to answer follow-up questions. "
-        "Please set `ANTHROPIC_API_KEY` in your `.env` file."
-    )
-    st.session_state["chat_messages"].append(
-        {"role": "assistant", "content": msg}
-    )
-    return msg
-
-
-def _render_standalone_chat():
-    """Render chat interface when no protein is loaded — uses online tools only."""
-    # Agent mode always on for standalone (online tools only)
-    _render_tool_badges()
-
-    if "chat_messages" not in st.session_state:
-        st.session_state["chat_messages"] = []
-
-    # Suggestion buttons for empty state
-    if not st.session_state["chat_messages"]:
-        standalone_suggestions = [
-            "Tell me about TP53 — function, domains, and disease links",
-            "What drugs target EGFR? Show me their properties and suggest a figure",
-            "Is the KRAS G12C mutation clinically significant?",
-            "Find BRCA1 interaction partners and suggest a pathway diagram",
-        ]
-        cols = st.columns(2)
-        for i, suggestion in enumerate(standalone_suggestions):
-            if cols[i % 2].button(
-                suggestion[:50] + ("..." if len(suggestion) > 50 else ""),
-                key=f"standalone_suggest_{i}",
-                use_container_width=True,
-            ):
-                st.session_state["chat_messages"].append(
-                    {"role": "user", "content": suggestion}
-                )
-                _generate_standalone_agent_response()
-                st.rerun()
-
-    # Show chat history
-    if st.session_state["chat_messages"]:
-        _render_chat_bubbles(st.session_state["chat_messages"])
-
-    # Chat input
-    if prompt := st.chat_input("Ask anything about proteins, drugs, variants..."):
-        st.session_state["chat_messages"].append({"role": "user", "content": prompt})
-        with st.spinner("Lumi is thinking..."):
-            _generate_standalone_agent_response()
-        st.rerun()
-
-
-def _generate_standalone_agent_response() -> str:
-    """Generate agent response without loaded protein (online tools only)."""
-    if not ANTHROPIC_API_KEY:
-        return _fallback_response()
-
-    try:
-        from src.bio_agent import run_agent_turn
-    except ImportError:
-        return _fallback_response()
-
-    session_context = {
-        "query": None,
-        "protein_name": "",
-        "mutation": None,
-        "mutation_pos": None,
-        "pdb_content": "",
-        "trust_audit": None,
-        "bio_context": None,
-        "confidence_json": {},
-        "variant_data": None,
-    }
-
-    messages = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in st.session_state["chat_messages"]
-        if msg["role"] in ("user", "assistant")
-    ]
-
-    try:
-        assistant_text, tool_calls = run_agent_turn(messages, session_context)
-    except Exception as e:
-        assistant_text = f"I encountered an error: {e}"
-        tool_calls = []
-
-    if tool_calls:
-        st.session_state["chat_messages"].append({
-            "role": "tool_calls",
-            "calls": tool_calls,
-        })
-
-    # Auto-append BioRender suggestions for standalone mode
-    biorender_suggestion = _get_biorender_suggestion_for_tools(tool_calls)
-    if biorender_suggestion:
-        assistant_text += biorender_suggestion
-
-    attribution = (
-        "\n\n---\n"
-        "*Powered by Anthropic Claude "
-        "| Databases: UniProt, AlphaFold, gnomAD, STRING, PubChem, PharmGKB, "
-        "Ensembl, InterPro, Semantic Scholar, RCSB PDB | Figures via BioRender*"
-    )
-    display_text = assistant_text + attribution
-    st.session_state["chat_messages"].append(
-        {"role": "assistant", "content": display_text}
-    )
-    return display_text

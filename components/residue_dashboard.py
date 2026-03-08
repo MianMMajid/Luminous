@@ -179,7 +179,29 @@ def render_residue_dashboard(
         pathogenic_positions=pathogenic_positions,
     )
 
-    st.plotly_chart(fig, use_container_width=True, key="residue_dashboard_chart")
+    selection = st.plotly_chart(
+        fig, use_container_width=True, key="residue_dashboard_chart",
+        on_select="rerun",
+    )
+
+    # Cross-filtering: capture selected residues from dashboard click/selection
+    if selection and selection.get("selection", {}).get("points"):
+        selected_points = selection["selection"]["points"]
+        selected_residues = []
+        for pt in selected_points:
+            x_val = pt.get("x")
+            if x_val is not None:
+                try:
+                    selected_residues.append(int(x_val))
+                except (ValueError, TypeError):
+                    pass
+        if selected_residues:
+            st.session_state["selected_residues"] = selected_residues
+            st.caption(
+                f"Selected {len(selected_residues)} residue(s): "
+                f"{', '.join(map(str, selected_residues[:10]))}"
+                f"{'...' if len(selected_residues) > 10 else ''}"
+            )
 
     # ---- Residue Insights callout ----
     _render_residue_insights(
@@ -755,96 +777,90 @@ def _add_bfactor_track(
 # ---------------------------------------------------------------------------
 
 
+# --- Cached compute helpers (persist across reruns for same PDB content) ---
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _cached_surface(pdb_content: str) -> dict | None:
+    try:
+        from src.surface_properties import compute_surface_properties
+        return compute_surface_properties(pdb_content)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _cached_disorder(pdb_content: str, plddt_tuple: tuple | None) -> dict | None:
+    try:
+        from src.disorder_prediction import predict_disorder
+        plddt = list(plddt_tuple) if plddt_tuple else None
+        return predict_disorder(pdb_content, plddt)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _cached_conservation(pdb_content: str) -> dict | None:
+    try:
+        from src.conservation import compute_conservation_scores
+        return compute_conservation_scores(pdb_content)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _cached_pockets(pdb_content: str) -> dict | None:
+    try:
+        from src.pocket_prediction import predict_pockets
+        return predict_pockets(pdb_content)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _cached_depth(pdb_content: str) -> dict | None:
+    try:
+        from src.residue_depth import compute_residue_depth
+        return compute_residue_depth(pdb_content)
+    except Exception:
+        return None
+
+
 def _get_surface_data() -> dict | None:
-    """Get cached surface property data from session state, or compute lazily."""
-    query = st.session_state.get("parsed_query")
-    pname = query.protein_name if query else "unknown"
-    key = f"_dashboard_surface_data_{pname}"
-    if key in st.session_state:
-        return st.session_state[key]
-    # Try to compute from PDB in session state
+    """Get surface property data (st.cache_data backed)."""
     prediction = st.session_state.get("prediction_result")
     if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
-        try:
-            from src.surface_properties import compute_surface_properties
-            data = compute_surface_properties(prediction.pdb_content)
-            st.session_state[key] = data
-            return data
-        except Exception:
-            pass
+        return _cached_surface(prediction.pdb_content)
     return None
 
 
 def _get_disorder_data() -> dict | None:
-    query = st.session_state.get("parsed_query")
-    pname = query.protein_name if query else "unknown"
-    key = f"_dashboard_disorder_data_{pname}"
-    if key in st.session_state:
-        return st.session_state[key]
     prediction = st.session_state.get("prediction_result")
     if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
-        try:
-            from src.disorder_prediction import predict_disorder
-            plddt = prediction.plddt_per_residue if hasattr(prediction, "plddt_per_residue") else None
-            data = predict_disorder(prediction.pdb_content, plddt)
-            st.session_state[key] = data
-            return data
-        except Exception:
-            pass
+        plddt = None
+        if hasattr(prediction, "plddt_per_residue") and prediction.plddt_per_residue:
+            plddt = tuple(prediction.plddt_per_residue)
+        return _cached_disorder(prediction.pdb_content, plddt)
     return None
 
 
 def _get_conservation_data() -> dict | None:
-    query = st.session_state.get("parsed_query")
-    pname = query.protein_name if query else "unknown"
-    key = f"_dashboard_conservation_data_{pname}"
-    if key in st.session_state:
-        return st.session_state[key]
     prediction = st.session_state.get("prediction_result")
     if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
-        try:
-            from src.conservation import compute_conservation_scores
-            data = compute_conservation_scores(prediction.pdb_content)
-            st.session_state[key] = data
-            return data
-        except Exception:
-            pass
+        return _cached_conservation(prediction.pdb_content)
     return None
 
 
 def _get_pocket_data() -> dict | None:
-    query = st.session_state.get("parsed_query")
-    pname = query.protein_name if query else "unknown"
-    key = f"_dashboard_pocket_data_{pname}"
-    if key in st.session_state:
-        return st.session_state[key]
     prediction = st.session_state.get("prediction_result")
     if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
-        try:
-            from src.pocket_prediction import predict_pockets
-            data = predict_pockets(prediction.pdb_content)
-            st.session_state[key] = data
-            return data
-        except Exception:
-            pass
+        return _cached_pockets(prediction.pdb_content)
     return None
 
 
 def _get_depth_data() -> dict | None:
-    query = st.session_state.get("parsed_query")
-    pname = query.protein_name if query else "unknown"
-    key = f"_dashboard_depth_data_{pname}"
-    if key in st.session_state:
-        return st.session_state[key]
     prediction = st.session_state.get("prediction_result")
     if prediction and hasattr(prediction, "pdb_content") and prediction.pdb_content:
-        try:
-            from src.residue_depth import compute_residue_depth
-            data = compute_residue_depth(prediction.pdb_content)
-            st.session_state[key] = data
-            return data
-        except Exception:
-            pass
+        return _cached_depth(prediction.pdb_content)
     return None
 
 
@@ -1470,6 +1486,51 @@ def _render_residue_insights(
                 f"transition ({' / '.join(ss_names)}). Boundary residues are often "
                 "sensitive to mutation."
             )
+
+    # --- Pattern 7: PTM sites at key positions ---
+    try:
+        from src.ptm_analysis import predict_ptm_sites
+        prediction = st.session_state.get("prediction_result")
+        if prediction and prediction.pdb_content:
+            ptm_sites = predict_ptm_sites(prediction.pdb_content)
+            if ptm_sites:
+                accessible = [p for p in ptm_sites if p.get("accessible", False)]
+                ptm_at_mutation = [p for p in ptm_sites if mutation_pos and p.get("residue") == mutation_pos]
+                if ptm_at_mutation:
+                    ptm_type = ptm_at_mutation[0].get("type", "PTM")
+                    insights.append(
+                        f"**Mutation site (res {mutation_pos})** is a predicted **{ptm_type} site**. "
+                        f"Mutation may abolish this post-translational modification."
+                    )
+                elif accessible:
+                    types = set(p.get("type", "PTM") for p in accessible)
+                    insights.append(
+                        f"**{len(accessible)} accessible PTM site(s)** predicted "
+                        f"({', '.join(types)}). These modifications regulate protein function "
+                        f"and may be disrupted by nearby mutations."
+                    )
+    except (ImportError, Exception):
+        pass
+
+    # --- Pattern 8: High flexibility at conserved positions ---
+    try:
+        flexibility = structure_analysis.get("flexibility", {})
+        if flexibility:
+            _conservation = _get_conservation_data()
+            cons_scores = _conservation.get("conservation_scores", {}) if _conservation else {}
+            flex_conserved = [
+                r for r in residue_ids
+                if flexibility.get(r, 0) > 0.7 and cons_scores.get(r, 5) >= 7
+            ]
+            if flex_conserved:
+                pos_str = ", ".join(str(r) for r in sorted(flex_conserved)[:5])
+                insights.append(
+                    f"**{len(flex_conserved)} residue(s)** are both highly flexible (ANM) "
+                    f"and highly conserved ({pos_str}). These likely represent "
+                    f"**functionally important dynamics** — conformational changes required for activity."
+                )
+    except Exception:
+        pass
 
     # ---- Render ----
     if insights:

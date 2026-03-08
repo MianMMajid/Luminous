@@ -5,7 +5,8 @@ import io
 import json
 from pathlib import Path
 
-import biotite.structure.io.pdb as pdb
+
+# biotite is lazy-loaded in parse_pdb_plddt() to avoid ~0.5s startup cost
 
 
 class SafeJSONEncoder(json.JSONEncoder):
@@ -83,6 +84,7 @@ def parse_pdb_plddt(pdb_content: str) -> tuple[list[str], list[int], list[float]
         return [], [], []
 
     try:
+        import biotite.structure.io.pdb as pdb
         pdb_file = pdb.PDBFile.read(io.StringIO(pdb_content))
         structure = pdb_file.get_structure(model=1, extra_fields=["b_factor"])
     except Exception:

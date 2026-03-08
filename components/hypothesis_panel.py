@@ -15,6 +15,7 @@ def render_hypothesis_panel(
     query: ProteinQuery,
     trust_audit: TrustAudit,
     bio_context: BioContext | None,
+    key_suffix: str = "",
 ):
     """Render the hypothesis generation panel."""
     st.markdown("### AI-Generated Hypotheses")
@@ -31,30 +32,49 @@ def render_hypothesis_panel(
     variant_data = st.session_state.get(f"variant_data_{query.protein_name}")
 
     if hypotheses is None:
-        if st.button("Generate Hypotheses", type="primary", key="gen_hyp"):
-            with st.spinner("Claude is reasoning over all available data..."):
+        # Check if background generation is running
+        from src.task_manager import task_manager
+        hyp_status = task_manager.status("hypothesis_generation")
+        if hyp_status and hyp_status.value == "running":
+            st.info("Claude is reasoning over all available data in the background...")
+            return
+
+        # Pick up result if just completed
+        hyp_result = task_manager.get_result("hypothesis_generation")
+        if hyp_result and isinstance(hyp_result, dict):
+            hypotheses = hyp_result.get("hypotheses")
+            if hypotheses:
+                st.session_state[cache_key] = hypotheses
+
+        if hypotheses is None:
+            if st.button("Generate Hypotheses", type="primary", key=f"gen_hyp{key_suffix}"):
                 from src.hypothesis_engine import generate_hypotheses
 
-                hypotheses = generate_hypotheses(
-                    query, trust_audit, bio_context, variant_data
-                )
-                st.session_state[cache_key] = hypotheses
-                st.rerun()
-        else:
-            # Show what data is available for hypothesis generation
-            data_sources = ["Structure prediction", "Trust audit"]
-            if bio_context and (bio_context.disease_associations or bio_context.drugs):
-                data_sources.append("Biological context")
-            if variant_data and variant_data.get("variants"):
-                data_sources.append(f"Variant landscape ({variant_data.get('total', '?')} variants)")
+                def _gen(q, ta, bc, vd):
+                    return {"hypotheses": generate_hypotheses(q, ta, bc, vd)}
 
-            st.info(
-                "Click **Generate Hypotheses** to have Claude analyze your data and suggest "
-                "testable scientific hypotheses based on the structure prediction, trust audit, "
-                "and biological context.",
-                icon="💡",
-            )
-            return
+                task_manager.submit(
+                    "hypothesis_generation",
+                    _gen,
+                    args=(query, trust_audit, bio_context, variant_data),
+                    label="Generating hypotheses",
+                )
+                st.info("Claude is reasoning in the background — you'll be notified when done.")
+                return
+            else:
+                data_sources = ["Structure prediction", "Trust audit"]
+                if bio_context and (bio_context.disease_associations or bio_context.drugs):
+                    data_sources.append("Biological context")
+                if variant_data and variant_data.get("variants"):
+                    data_sources.append(f"Variant landscape ({variant_data.get('total', '?')} variants)")
+
+                st.info(
+                    "Click **Generate Hypotheses** to have Claude analyze your data and suggest "
+                    "testable scientific hypotheses based on the structure prediction, trust audit, "
+                    "and biological context.",
+                    icon="💡",
+                )
+                return
 
     st.markdown(hypotheses)
 

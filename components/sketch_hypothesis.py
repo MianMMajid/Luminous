@@ -57,9 +57,12 @@ def render_sketch_hypothesis():
     query: ProteinQuery | None = st.session_state.get("parsed_query")
 
     st.markdown(
-        "### Sketch Your Hypothesis\n"
-        "Draw a rough pathway or mechanism diagram. "
-        "Click **Send to Lumi** when ready for AI interpretation."
+        '<div class="lumi-tab-header">'
+        '<div class="tab-title">Sketch Your Hypothesis</div>'
+        '<div class="tab-subtitle">Draw a rough pathway or mechanism diagram. '
+        'Click <b>Send to Lumi</b> when ready for AI interpretation.</div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
 
     if query:
@@ -109,10 +112,9 @@ def render_sketch_hypothesis():
 
     if image_bytes:
         if st.button("Interpret Sketch", type="primary", key="interpret_btn"):
-            with st.spinner("Lumi is interpreting your sketch..."):
+            with st.status("Lumi is interpreting your sketch..."):
                 interpretation = _interpret_sketch(image_bytes, query)
                 st.session_state["sketch_interpretation"] = interpretation
-                st.rerun()
 
     if interpretation:
         st.divider()
@@ -124,7 +126,7 @@ def render_sketch_hypothesis():
     if trust_audit:
         st.divider()
         from components.hypothesis_panel import render_hypothesis_panel
-        render_hypothesis_panel(query or ProteinQuery(protein_name="Unknown"), trust_audit, bio_context)
+        render_hypothesis_panel(query or ProteinQuery(protein_name="Unknown"), trust_audit, bio_context, key_suffix="_sketch")
 
 
 def _interpret_sketch(image_bytes: bytes, query: ProteinQuery | None) -> dict | None:
@@ -571,12 +573,11 @@ def _render_sketch_biorender(interpretation: dict, query: ProteinQuery | None):
             type="primary",
             key="sketch_br_generate",
         ):
-            with st.spinner("Generating pathway diagram via BioRender MCP..."):
+            with st.status("Generating pathway diagram via BioRender MCP..."):
                 from src.biorender_search import generate_biorender_figure
 
                 fig_result = generate_biorender_figure(interpretation, query)
                 st.session_state[fig_cache_key] = fig_result or {"_failed": True}
-                st.rerun()
     elif fig_result.get("_failed"):
         st.warning(
             "BioRender figure generation is not available. "
@@ -616,12 +617,11 @@ def _render_sketch_biorender(interpretation: dict, query: ProteinQuery | None):
             type="secondary",
             key="sketch_br_search",
         ):
-            with st.spinner("Searching BioRender for matching templates..."):
+            with st.status("Searching BioRender for matching templates..."):
                 from src.biorender_search import search_biorender_for_sketch
 
                 br_results = search_biorender_for_sketch(interpretation, query)
                 st.session_state[br_cache_key] = br_results
-                st.rerun()
         return
 
     templates = [r for r in br_results if r.get("type") == "template"]

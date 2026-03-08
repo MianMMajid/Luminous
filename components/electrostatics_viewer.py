@@ -69,7 +69,6 @@ def render_electrostatics_panel(pdb_content: str, query: ProteinQuery):
             key=f"compute_electrostatics_{query.protein_name}",
         ):
             _run_peppatch(pdb_content, query, state_key)
-            st.rerun()
         return
 
     # Results are available — render them

@@ -26,6 +26,8 @@ dependencies = [
     "streamlit-elements>=0.1,<0.2",
     "pingouin>=0.5.5",
     "lifelines>=0.30",
+    "google-genai>=1.66.0",
+    "scipy>=1.12",
 ]
 
 [tool.ruff]

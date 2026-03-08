@@ -7,6 +7,7 @@ load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 TAMARIND_API_KEY = os.getenv("TAMARIND_API_KEY", "")
 BIORENDER_TOKEN = os.getenv("BIORENDER_TOKEN", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 TAMARIND_BASE_URL = "https://app.tamarind.bio/api"
 PUBMED_MCP_URL = "https://pubmed.mcp.claude.com/mcp"

@@ -311,7 +311,6 @@ def _render_pipeline_templates(
                     use_container_width=True,
                 ):
                     _execute_pipeline(query, prediction, tpl, remaining_tools)
-                    st.rerun()
 
 
 def _render_pipeline_flow(tools: list[tuple[str, str, str]], color: str):
@@ -495,7 +494,6 @@ def _render_recommendation_cards(
                         use_container_width=True,
                     ):
                         _execute_single_tool(tool_key, display_name, query, prediction)
-                        st.rerun()
                 else:
                     st.caption("_Missing required input_")
 
@@ -529,7 +527,7 @@ def _execute_single_tool(
 
     drug_smiles = _get_drug_smiles_from_context()
 
-    with st.spinner(f"Running {display_name}..."):
+    with st.status(f"Running {display_name}...", expanded=False):
         async def _run():
             return await _run_safe(tool_key, query, prediction.pdb_content, drug_smiles)
 
