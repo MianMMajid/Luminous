@@ -10,12 +10,7 @@ import io
 import json
 from typing import Any
 
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
-
-from components.playground import pin_button
 
 # ---------------------------------------------------------------------------
 # Lazy imports -- these may not be installed
@@ -67,6 +62,14 @@ def _init_stats_state():
 
 def render_statistics():
     """Tab: Statistical analysis -- tests, curve fitting, and survival analysis."""
+    import numpy as np  # noqa: F811 — lazy to avoid ~0.4s startup cost
+    import pandas as pd  # noqa: F811
+    import plotly.graph_objects as go  # noqa: F811
+    from components.playground import pin_button  # noqa: F811
+
+    # Make available to nested helpers via module globals
+    globals().update({"np": np, "pd": pd, "go": go, "pin_button": pin_button})
+
     _init_stats_state()
 
     # Header

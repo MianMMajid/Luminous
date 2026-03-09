@@ -4,10 +4,7 @@ import json
 
 import streamlit as st
 
-try:
-    import molviewspec as mvs
-except Exception:
-    mvs = None  # Python 3.9 compat — molviewspec needs 3.10+
+mvs = None  # lazy-loaded in render_structure_viewer() to avoid ~0.5s startup cost
 
 from src.models import PredictionResult, ProteinQuery, TrustAudit
 from src.trust_auditor import build_trust_audit, get_residue_flags
@@ -22,16 +19,23 @@ from src.utils import (
 
 def render_structure_viewer():
     """Tab 2: 3D structure viewer with trust audit panel -- THE HERO SCREEN."""
+    if not st.session_state.get("query_parsed"):
+        from components.empty_state import render_empty_state
+        render_empty_state("structure")
+        return
+    global mvs
+    if mvs is None:
+        try:
+            import molviewspec as _mvs
+            mvs = _mvs
+        except Exception:
+            pass
     if mvs is None:
         st.warning(
             "3D viewer requires Python 3.10+. "
             "Current version doesn't support molviewspec. "
             "Run: `brew install python@3.12 && python3.12 -m pip install -r requirements.txt`"
         )
-        return
-    if not st.session_state.get("query_parsed"):
-        from components.empty_state import render_empty_state
-        render_empty_state("structure")
         return
 
     query: ProteinQuery | None = st.session_state.get("parsed_query")
