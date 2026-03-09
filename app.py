@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+# Set MPLCONFIGDIR early — prevents matplotlib from rebuilding its font cache
+# on every cold start (~12s → <0.5s).
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/bioxyc-mpl")
 
 import streamlit as st
 
@@ -201,10 +206,29 @@ DEFAULTS = {
     "stats_survival_data": None,
     "_chat_thinking": False,
     "_interpretation_attempted": False,
+    "experiment_tracker": {},
+    "generated_hypotheses": None,
+    "playground_inspiration": None,
+    "structure_analysis": None,
 }
 for key, val in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# --- API Key Validation (show once per session) ---
+if not st.session_state.get("_api_warning_shown"):
+    import os as _os
+    _missing = []
+    if not _os.getenv("ANTHROPIC_API_KEY"):
+        _missing.append("ANTHROPIC_API_KEY (required for AI interpretation)")
+    if not _os.getenv("TAMARIND_API_KEY"):
+        _missing.append("TAMARIND_API_KEY (required for live structure prediction)")
+    if _missing:
+        st.warning(
+            "**Missing API keys:** " + ", ".join(_missing) + ". "
+            "Set them in `.env` or Railway environment variables."
+        )
+    st.session_state["_api_warning_shown"] = True
 
 
 def reset_results():
@@ -360,37 +384,67 @@ tab_chat, tab_query, tab_structure, tab_context, tab_report, tab_stats, tab_play
     default=_saved_tab if _saved_tab in _TAB_LABELS else None,
 )
 
-with tab_query:
+# ── Fragment-wrapped tab renderers ──────────────────────────────────────────
+# @st.fragment() makes each tab an independent re-run scope: a widget change
+# inside one tab only re-executes THAT tab's fragment, not the entire app.
+# This eliminates the eager fan-out where every rerun recomputes all 8 tabs.
+
+@st.fragment()
+def _frag_query():
     from components.query_input import render_query_input
     render_query_input()
 
-with tab_structure:
+@st.fragment()
+def _frag_structure():
     from components.structure_viewer import render_structure_viewer
     render_structure_viewer()
 
-with tab_context:
+@st.fragment()
+def _frag_context():
     from components.context_panel import render_context_panel
     render_context_panel()
 
-with tab_report:
+@st.fragment()
+def _frag_report():
     from components.report_export import render_report_export
     render_report_export()
 
-with tab_stats:
+@st.fragment()
+def _frag_stats():
     from components.statistics_tab import render_statistics
     render_statistics()
 
-with tab_playground:
+@st.fragment()
+def _frag_playground():
     from components.playground import render_playground
     render_playground()
 
-with tab_sketch:
+@st.fragment()
+def _frag_sketch():
     from components.sketch_hypothesis import render_sketch_hypothesis
     render_sketch_hypothesis()
 
-with tab_chat:
+@st.fragment()
+def _frag_chat():
     from components.chat_followup import render_chat_followup
     render_chat_followup()
+
+with tab_query:
+    _frag_query()
+with tab_structure:
+    _frag_structure()
+with tab_context:
+    _frag_context()
+with tab_report:
+    _frag_report()
+with tab_stats:
+    _frag_stats()
+with tab_playground:
+    _frag_playground()
+with tab_sketch:
+    _frag_sketch()
+with tab_chat:
+    _frag_chat()
 
 def _is_modal_ready() -> bool:
     """Check if Modal is installed and has credentials."""
@@ -537,7 +591,7 @@ with st.sidebar:
 
     sponsors = [
         ("Tamarind Bio", "200+ tools: structure, docking, design, properties", _check_key("TAMARIND_API_KEY")),
-        ("Anthropic Claude", "AI interpretation + MCP", _check_key("ANTHROPIC_API_KEY")),
+        ("Anthropic Claude", "Agent SDK · Tool Use · Vision · Citations · Code Execution · Extended Thinking · MCP", _check_key("ANTHROPIC_API_KEY")),
         ("BioRender", "Scientific illustration via MCP", _check_key("BIORENDER_TOKEN")),
         ("Wiley Scholar Gateway", "Full-text journal articles via MCP", True),
         ("Gemini Veo", "AI protein animation videos", _check_key("GEMINI_API_KEY")),

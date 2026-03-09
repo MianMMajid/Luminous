@@ -92,17 +92,43 @@ def _kick_chat_agent(query, prediction, trust_audit, bio_context):
 
 
 def _kick_standalone_agent():
-    """Build context and submit standalone agent call to background."""
+    """Build context and submit standalone agent call to background.
+
+    Even without a parsed query, pull any available session state
+    so the agent has whatever context exists.
+    """
     if not ANTHROPIC_API_KEY:
         st.session_state["chat_messages"].append(
             {"role": "assistant", "content": _fallback_text()}
         )
         return
 
+    # Pull whatever context is available from session state
+    query = st.session_state.get("parsed_query")
+    prediction = st.session_state.get("prediction_result")
+    trust_audit = st.session_state.get("trust_audit")
+    bio_context = st.session_state.get("bio_context")
+    protein_name = query.protein_name if query else ""
+
+    import re
+    mutation_pos = None
+    if query and query.mutation:
+        m = re.match(r"[A-Z](\d+)[A-Z]", query.mutation)
+        if m:
+            mutation_pos = int(m.group(1))
+
     session_context = {
-        "query": None, "protein_name": "", "mutation": None,
-        "mutation_pos": None, "pdb_content": "", "trust_audit": None,
-        "bio_context": None, "confidence_json": {}, "variant_data": None,
+        "query": query,
+        "protein_name": protein_name,
+        "mutation": query.mutation if query else None,
+        "mutation_pos": mutation_pos,
+        "pdb_content": prediction.pdb_content if prediction else "",
+        "trust_audit": trust_audit,
+        "bio_context": bio_context,
+        "confidence_json": prediction.confidence_json if prediction else {},
+        "variant_data": st.session_state.get(
+            f"variant_data_{protein_name}" if protein_name else "", None
+        ),
     }
 
     messages = [
@@ -287,11 +313,33 @@ def _render_chat_bubbles(messages: list[dict], *, thinking: bool = False):
         if role == "tool_calls":
             for tc in msg.get("calls", []):
                 tool_name = html_mod.escape(tc.get("tool", "unknown"))
-                output_text = html_mod.escape(tc.get("output", "")[:300])
+                raw_output = tc.get("output", "")
+                # Show full output (up to 2000 chars) with nice formatting
+                output_text = html_mod.escape(raw_output[:2000])
+                if len(raw_output) > 2000:
+                    output_text += "\n… (truncated)"
+                # Format tool input params as compact summary
+                tool_input = tc.get("input", {})
+                input_summary = ""
+                if isinstance(tool_input, dict) and tool_input:
+                    params = [
+                        f"<span style='color:#007AFF'>{html_mod.escape(str(k))}</span>="
+                        f"<span style='color:#333'>{html_mod.escape(str(v)[:60])}</span>"
+                        for k, v in list(tool_input.items())[:4]
+                    ]
+                    input_summary = (
+                        f'<div style="font-size:0.78rem;color:rgba(60,60,67,0.6);'
+                        f'padding:4px 8px;margin-bottom:4px">'
+                        f'{", ".join(params)}</div>'
+                    )
                 bubble_parts.append(
-                    f'<details class="lumi-tool-call">'
-                    f"<summary>Called: {tool_name}</summary>"
-                    f"<pre>{output_text}</pre>"
+                    f'<details class="lumi-tool-call" open>'
+                    f'<summary style="font-weight:600;font-size:0.85rem">'
+                    f'<span style="color:#007AFF">⚡</span> {tool_name}</summary>'
+                    f'{input_summary}'
+                    f'<pre style="max-height:300px;overflow-y:auto;'
+                    f'font-size:0.78rem;white-space:pre-wrap;word-break:break-word">'
+                    f'{output_text}</pre>'
                     f"</details>"
                 )
         elif role == "user":
@@ -301,19 +349,33 @@ def _render_chat_bubbles(messages: list[dict], *, thinking: bool = False):
             )
             bubble_parts.append('<div class="lumi-delivered">Delivered</div>')
         elif role == "assistant":
-            # Allow markdown rendering in assistant bubbles
+            # Render assistant messages with rich markdown support
             content = msg.get("content", "")
-            # Basic markdown: bold, italic, links, code
             import re
 
             safe = html_mod.escape(content)
-            # Restore markdown bold
+            # Code blocks (triple backtick) — must be before inline code
+            safe = re.sub(
+                r"```(\w*)\n(.*?)```",
+                r'<pre style="background:rgba(0,0,0,0.04);padding:8px 10px;'
+                r'border-radius:6px;font-size:0.8rem;overflow-x:auto;'
+                r'margin:6px 0"><code>\2</code></pre>',
+                safe, flags=re.DOTALL,
+            )
+            # Markdown bold
             safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
-            # Restore markdown italic
+            # Markdown italic
             safe = re.sub(r"\*(.+?)\*", r"<i>\1</i>", safe)
-            # Restore inline code
+            # Inline code
             safe = re.sub(r"`(.+?)`", r"<code>\1</code>", safe)
-            # Restore line breaks
+            # Headers (### → h4, ## → h3, # → h3)
+            safe = re.sub(r"^### (.+)$", r'<div style="font-weight:700;font-size:0.95rem;margin:8px 0 4px">\1</div>', safe, flags=re.MULTILINE)
+            safe = re.sub(r"^## (.+)$", r'<div style="font-weight:700;font-size:1rem;margin:10px 0 4px">\1</div>', safe, flags=re.MULTILINE)
+            # Horizontal rules
+            safe = safe.replace("---", '<hr style="border:none;border-top:1px solid rgba(0,0,0,0.1);margin:8px 0">')
+            # Bullet lists
+            safe = re.sub(r"^- (.+)$", r'<div style="padding-left:12px">• \1</div>', safe, flags=re.MULTILINE)
+            # Line breaks (for non-list, non-pre content)
             safe = safe.replace("\n", "<br>")
             bubble_parts.append(
                 f'<div class="lumi-bubble assistant">{safe}</div>'
@@ -425,7 +487,7 @@ def _render_composer_toolbar():
     # Count total tools
     total = sum(len(cat["tools"]) for cat in _TOOL_CATEGORIES.values())
 
-    with st.expander(f"Lumi's Tools ({total})", expanded=False):
+    with st.expander(f"Lumi's Tools ({total}) — Claude Agent SDK + Tool Use", expanded=False):
         for cat_name, cat_data in _TOOL_CATEGORIES.items():
             color = cat_data["color"]
             tools = cat_data["tools"]

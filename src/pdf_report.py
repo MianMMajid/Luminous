@@ -97,6 +97,10 @@ def _find_fonts() -> tuple[str, str, str, str]:
 
 # ─── Custom PDF Class ────────────────────────────────────────────
 
+# Pre-discover fonts once at module load (lru_cache avoids repeated filesystem checks)
+_CACHED_FONTS = _find_fonts()
+
+
 class LuminousPDF(FPDF):
     """Custom FPDF subclass with Luminous branding."""
 
@@ -113,7 +117,7 @@ class LuminousPDF(FPDF):
         self.set_auto_page_break(auto=True, margin=22)
         self.set_margins(left=15, top=15, right=15)
 
-        reg, bold, ital, bi = _find_fonts()
+        reg, bold, ital, bi = _CACHED_FONTS
         if reg:
             try:
                 self.add_font(self._FONT, "", reg)
@@ -1231,20 +1235,21 @@ def _render_structural_insights_page(
         if m:
             mutation_pos = int(m.group(1))
 
+    # Build pathogenic_positions lookup (needed for charts regardless of cache)
+    pathogenic_positions = {}
+    if variant_data and variant_data.get("pathogenic_positions"):
+        for pos_key, names in variant_data["pathogenic_positions"].items():
+            try:
+                pathogenic_positions[int(pos_key)] = names
+            except (ValueError, TypeError):
+                pass
+
     # Try cached structural analysis first (already computed by structural_insights tab)
     import streamlit as st
     cache_key = f"struct_analysis_{query.protein_name}_{query.mutation}"
     analysis = st.session_state.get(cache_key) or st.session_state.get("structure_analysis")
 
     if analysis is None:
-        # Fallback: compute if not cached
-        pathogenic_positions = {}
-        if variant_data and variant_data.get("pathogenic_positions"):
-            for pos_key, names in variant_data["pathogenic_positions"].items():
-                try:
-                    pathogenic_positions[int(pos_key)] = names
-                except (ValueError, TypeError):
-                    pass
 
         pocket_residues = []
         try:

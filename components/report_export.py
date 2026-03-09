@@ -38,7 +38,7 @@ def render_report_export():
     st.markdown(
         f'<div class="lumi-tab-header">'
         f'<div class="tab-title">Report: {query.protein_name}{mut_str}</div>'
-        f'<div class="tab-subtitle">AI Structure Interpretation &amp; Trust Audit</div>'
+        f'<div class="tab-subtitle">Interpretation grounded via Citations API &middot; Figures via Code Execution Tool</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -172,49 +172,54 @@ def render_report_export():
         )
 
     # ── Figure Studio & Advanced Exports ──
-    # All figure generation tools and advanced exports in one collapsible section
-    # to reduce scroll depth and cognitive overload.
+    # Wrapped in @st.fragment so its nested tabs/expanders only re-render
+    # when a widget inside this section changes, not on every app rerun.
     st.divider()
-    with st.expander("Figure Studio & Advanced Exports", expanded=False):
-        st.caption(
-            "Publication-quality figures, graphical abstracts, AI-generated diagrams, "
-            "video animation, experiment tracking, and more."
-        )
-        studio_tabs = st.tabs([
-            "AI Figures (SVG)",
-            "AI Figures (PNG)",
-            "Figure Kit",
-            "Panel Composer",
-            "Graphical Abstract",
-            "Video",
-            "More Exports",
-        ])
 
-        with studio_tabs[0]:
-            _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
+    @st.fragment()
+    def _frag_figure_studio():
+        with st.expander("Figure Studio & Advanced Exports", expanded=False):
+            st.caption(
+                "Publication-quality figures, graphical abstracts, AI-generated diagrams, "
+                "video animation, experiment tracking, and more."
+            )
+            studio_tabs = st.tabs([
+                "AI Figures (SVG)",
+                "AI Figures (PNG)",
+                "Figure Kit",
+                "Panel Composer",
+                "Graphical Abstract",
+                "Video",
+                "More Exports",
+            ])
 
-        with studio_tabs[1]:
-            _render_code_execution_figures(query, prediction, trust_audit, bio_context)
+            with studio_tabs[0]:
+                _render_data_driven_figures(query, prediction, trust_audit, bio_context, interpretation)
 
-        with studio_tabs[2]:
-            _render_figure_kit_section(query, prediction, trust_audit, bio_context)
+            with studio_tabs[1]:
+                _render_code_execution_figures(query, prediction, trust_audit, bio_context)
 
-        with studio_tabs[3]:
-            _render_panel_composer(query, prediction, trust_audit, bio_context)
+            with studio_tabs[2]:
+                _render_figure_kit_section(query, prediction, trust_audit, bio_context)
 
-        with studio_tabs[4]:
-            _render_graphical_abstract(query, prediction, trust_audit, bio_context)
+            with studio_tabs[3]:
+                _render_panel_composer(query, prediction, trust_audit, bio_context)
 
-        with studio_tabs[5]:
-            from components.video_panel import render_video_panel
-            render_video_panel()
+            with studio_tabs[4]:
+                _render_graphical_abstract(query, prediction, trust_audit, bio_context)
 
-        with studio_tabs[6]:
-            _render_experiment_tracker(query, trust_audit, bio_context)
-            st.divider()
-            _render_html_export(query, prediction, trust_audit, bio_context, interpretation)
-            st.divider()
-            _render_biorender_section(query)
+            with studio_tabs[5]:
+                from components.video_panel import render_video_panel
+                render_video_panel()
+
+            with studio_tabs[6]:
+                _render_experiment_tracker(query, trust_audit, bio_context)
+                st.divider()
+                _render_html_export(query, prediction, trust_audit, bio_context, interpretation)
+                st.divider()
+                _render_biorender_section(query)
+
+    _frag_figure_studio()
 
 
 def _render_pdf_download(

@@ -13,21 +13,34 @@ from typing import Any
 import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Lazy imports -- these may not be installed
+# Lazy imports -- detected on first use, not at module load time
+# (pingouin pulls in matplotlib.font_manager which costs ~12s on cold start)
 # ---------------------------------------------------------------------------
 
-_HAS_PINGOUIN = True
-_HAS_LIFELINES = True
+_HAS_PINGOUIN: bool | None = None
+_HAS_LIFELINES: bool | None = None
 
-try:
-    import pingouin  # noqa: F401
-except ImportError:
-    _HAS_PINGOUIN = False
 
-try:
-    import lifelines  # noqa: F401
-except ImportError:
-    _HAS_LIFELINES = False
+def _check_pingouin() -> bool:
+    global _HAS_PINGOUIN
+    if _HAS_PINGOUIN is None:
+        try:
+            import pingouin  # noqa: F401
+            _HAS_PINGOUIN = True
+        except ImportError:
+            _HAS_PINGOUIN = False
+    return _HAS_PINGOUIN
+
+
+def _check_lifelines() -> bool:
+    global _HAS_LIFELINES
+    if _HAS_LIFELINES is None:
+        try:
+            import lifelines  # noqa: F401
+            _HAS_LIFELINES = True
+        except ImportError:
+            _HAS_LIFELINES = False
+    return _HAS_LIFELINES
 
 
 # ---------------------------------------------------------------------------
@@ -76,18 +89,18 @@ def render_statistics():
     st.markdown(
         '<div class="lumi-tab-header">'
         '<div class="tab-title">Statistics</div>'
-        '<div class="tab-subtitle">Hypothesis testing, curve fitting, and survival analysis</div>'
+        '<div class="tab-subtitle">Claude Analysis &middot; describe any test in plain English &middot; sandboxed code execution</div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    # Guard: required packages
-    if not _HAS_PINGOUIN:
+    # Guard: required packages (lazy check — first call triggers import)
+    if not _check_pingouin():
         st.warning(
             "**pingouin** is not installed. Statistical tests require it.  \n"
             "Run `uv pip install pingouin` and restart the app."
         )
-    if not _HAS_LIFELINES:
+    if not _check_lifelines():
         st.info(
             "**lifelines** is not installed. Survival analysis will be unavailable.  \n"
             "Run `uv pip install lifelines` to enable it."
@@ -479,7 +492,7 @@ _TEST_CATALOG: dict[str, list[str]] = {
 
 def _render_tests_section(df: pd.DataFrame):
     """Render the statistical tests UI."""
-    if not _HAS_PINGOUIN:
+    if not _check_pingouin():
         st.warning("Statistical tests require **pingouin**. Install it first.")
         return
 
@@ -1218,7 +1231,7 @@ def _display_fit_results(
 
 def _render_survival_section():
     """Render survival analysis UI with separate data entry."""
-    if not _HAS_LIFELINES:
+    if not _check_lifelines():
         st.warning(
             "Survival analysis requires **lifelines**.  \n"
             "Run `uv pip install lifelines` and restart the app."

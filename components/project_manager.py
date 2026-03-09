@@ -189,13 +189,17 @@ def _serialize_session() -> dict:
                 pass
 
     # Dynamic per-protein caches (variant_data_*, etc.)
+    # Must include all prefixes from reset_results() / _deserialize_session()
     _DYN_PREFIXES = (
         "variant_data_", "variant_enrichment_",
         "alphamissense_", "domains_", "flexibility_",
         "pockets_", "struct_analysis_", "alphafold_",
-        "tamarind_results_", "svg_diagram_", "svg_",
+        "biorender_results_", "tamarind_results_",
+        "svg_diagram_", "svg_",
         "pdf_bytes_", "html_report_", "figure_kit_",
         "rcsb_pdb_id_", "cex_",
+        "biorender_prompt_", "electrostatics_data_",
+        "nma_traj_", "morph_traj_", "charge_", "struct_diff_",
     )
     dyn: dict = {}
     for k, v in st.session_state.items():
@@ -332,6 +336,7 @@ def _deserialize_session(data: dict):
         st.session_state["experiment_tracker"] = data["experiment_tracker"]
 
     # Restore plain-value keys saved by _serialize_session
+    # Must match _serialize_session._PLAIN_KEYS (including byte fields)
     _PLAIN_KEYS = [
         "stats_data", "stats_results", "stats_survival_data",
         "structure_analysis", "generated_hypotheses",
@@ -339,6 +344,8 @@ def _deserialize_session(data: dict):
         "figure_checklist_state", "sketch_interpretation",
         "comparison_data", "playground_pinned", "playground_plan",
         "playground_inspiration",
+        # Bytes values (restored via safe_json_loads → base64 decode)
+        "sketch_image_bytes", "generated_video", "esmfold_pdb",
     ]
     for key in _PLAIN_KEYS:
         if key in data:

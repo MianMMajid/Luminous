@@ -43,7 +43,7 @@ def render_context_panel():
         st.markdown(
             '<div class="lumi-tab-header">'
             '<div class="tab-title">Gather Biological Context</div>'
-            '<div class="tab-subtitle">Query PubMed, Open Targets, Wiley, and ChEMBL to understand the '
+            '<div class="tab-subtitle">Claude MCP queries PubMed, Open Targets, Wiley, and ChEMBL to understand the '
             'clinical significance of your protein.</div>'
             '</div>',
             unsafe_allow_html=True,
@@ -82,7 +82,7 @@ def render_context_panel():
     # AI Interpretation (the headline)
     if interpretation:
         st.markdown(
-            '<div class="lumi-sub-header">AI Interpretation</div>',
+            '<div class="lumi-sub-header">AI Interpretation <span style="font-size:0.7em;color:rgba(60,60,67,0.4);font-weight:400">&mdash; Citations API</span></div>',
             unsafe_allow_html=True,
         )
         st.markdown(interpretation)
