@@ -1715,13 +1715,14 @@ def _render_claude_analysis_section(df: pd.DataFrame):
                 st.session_state["_claude_pending_prompt"] = prompt
                 st.rerun()
 
-    # Pending prompt from example button
+    # Pending prompt from example button — write into widget key so text_area picks it up
     pending = st.session_state.pop("_claude_pending_prompt", "")
+    if pending:
+        st.session_state["stats_claude_textarea"] = pending
 
     # Text input
     user_input = st.text_area(
         "Describe your analysis",
-        value=pending,
         height=90,
         placeholder="e.g. 'Compare groups A vs B with the right test, show effect size and power'",
         key="stats_claude_textarea",
@@ -1729,10 +1730,11 @@ def _render_claude_analysis_section(df: pd.DataFrame):
 
     # Controls row
     c1, c2, c3 = st.columns([3, 1, 1])
+    effective_prompt = user_input.strip() if user_input else ""
     with c1:
         run_clicked = st.button(
             "Run Analysis", key="stats_claude_run", type="primary",
-            disabled=not (user_input and user_input.strip()),
+            disabled=not effective_prompt,
         )
     with c2:
         use_opus = st.checkbox("Opus (thorough)", key="stats_claude_opus")
@@ -1742,8 +1744,9 @@ def _render_claude_analysis_section(df: pd.DataFrame):
             st.session_state["stats_claude_results"] = []
             st.rerun()
 
-    if run_clicked and user_input and user_input.strip():
-        _execute_claude_pipeline(df, user_input.strip(), use_opus)
+    # Auto-run when user clicked an example, or manual Run button
+    if (run_clicked or pending) and effective_prompt:
+        _execute_claude_pipeline(df, effective_prompt, use_opus)
 
     # Display results history
     _render_claude_results()

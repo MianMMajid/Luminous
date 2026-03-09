@@ -249,24 +249,22 @@ def _render_welcome_empty():
         unsafe_allow_html=True,
     )
 
-    # Centered suggestions
+    # Centered suggestions (CSS handles centering via [data-testid="stPills"])
     if not st.session_state.get("_chat_thinking"):
-        _, pills_col, _ = st.columns([2, 6, 1])
-        with pills_col:
-            _welcome_suggestions = [
-                "Tell me about TP53 and its role in cancer",
-                "What drugs target EGFR?",
-                "Is KRAS G12C druggable?",
-            ]
-            picked = st.pills(
-                "Suggestions", _welcome_suggestions,
-                key="welcome_suggest_pills",
-                label_visibility="collapsed",
-            )
-            if picked:
-                st.session_state["chat_messages"] = [{"role": "user", "content": picked}]
-                _kick_standalone_agent()
-                st.rerun()
+        _welcome_suggestions = [
+            "Tell me about TP53 and its role in cancer",
+            "What drugs target EGFR?",
+            "Is KRAS G12C druggable?",
+        ]
+        picked = st.pills(
+            "Suggestions", _welcome_suggestions,
+            key="welcome_suggest_pills",
+            label_visibility="collapsed",
+        )
+        if picked:
+            st.session_state["chat_messages"] = [{"role": "user", "content": picked}]
+            _kick_standalone_agent()
+            st.rerun()
 
     # Show thinking indicator if agent is working
     if st.session_state.get("_chat_thinking"):
