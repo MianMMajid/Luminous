@@ -189,11 +189,13 @@ def render_chat_followup():
     if not st.session_state["chat_messages"] and not st.session_state.get("_chat_thinking"):
         suggestions = _get_suggestions(query, trust_audit)
         short = [s[:55] + "..." if len(s) > 55 else s for s in suggestions[:4]]
-        picked = st.pills(
-            "Suggestions", short,
-            key="chat_suggest_pills",
-            label_visibility="collapsed",
-        )
+        _lp, _cp, _rp = st.columns([1, 4, 1])
+        with _cp:
+            picked = st.pills(
+                "Suggestions", short,
+                key="chat_suggest_pills",
+                label_visibility="collapsed",
+            )
         if picked:
             idx = short.index(picked)
             full = suggestions[idx]
