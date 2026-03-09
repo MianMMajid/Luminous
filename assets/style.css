@@ -1897,13 +1897,19 @@ a:hover, .stMarkdown a:hover {
     80%, 100% { transform: translateX(0) translateY(0); }         /* center = camera */
 }
 @keyframes dnaIdleLook {
-    0%, 100% { transform: translateX(0) translateY(0); }
-    20%      { transform: translateX(0.8px) translateY(0.3px); }
-    50%      { transform: translateX(-0.5px) translateY(0); }
-    80%      { transform: translateX(0.3px) translateY(-0.3px); }
+    /* 12s cycle: left → right → cheeky glance (wink) → up → random drift → center */
+    0%, 6%    { transform: translateX(0) translateY(0); }          /* center */
+    10%, 18%  { transform: translateX(-1.6px) translateY(0); }     /* look left */
+    24%, 30%  { transform: translateX(1.6px) translateY(0); }      /* look right */
+    36%, 40%  { transform: translateX(0) translateY(0); }          /* re-center before wink */
+    43%, 48%  { transform: translateX(1px) translateY(0.4px); }    /* cheeky down-right during wink */
+    54%, 58%  { transform: translateX(0) translateY(0); }          /* settle */
+    62%, 70%  { transform: translateX(0) translateY(-1.6px); }     /* look up */
+    76%, 82%  { transform: translateX(-0.6px) translateY(0.5px); } /* random drift */
+    90%, 100% { transform: translateX(0) translateY(0); }          /* home */
 }
 
-/* ── Eyelid blink (opacity-based) ── */
+/* ── Eyelid blink (intro sequence) ── */
 @keyframes dnaBlinkSequence {
     0%, 83%   { transform: scaleY(0); }   /* eyes open */
     85%, 87%  { transform: scaleY(1); }   /* blink! */
@@ -1911,9 +1917,29 @@ a:hover, .stMarkdown a:hover {
     92%, 94%  { transform: scaleY(1); }   /* double-blink */
     96%, 100% { transform: scaleY(0); }   /* open */
 }
-@keyframes dnaIdleBlink {
-    0%, 90%, 100% { transform: scaleY(0); }
-    93%, 95%      { transform: scaleY(1); }
+/* Left eyelid idle — regular blinks, stays OPEN during wink */
+@keyframes dnaIdleBlinkLeft {
+    0%, 100%  { transform: scaleY(0); }
+    /* blink at ~26% (during look-right) */
+    25%, 27%  { transform: scaleY(1); }
+    29%       { transform: scaleY(0); }
+    /* stays open at ~45% while right eye winks */
+    /* blink at ~76% (after look-up) */
+    75%, 77%  { transform: scaleY(1); }
+    79%       { transform: scaleY(0); }
+}
+/* Right eyelid idle — regular blinks + WINK at ~45% */
+@keyframes dnaIdleBlinkWink {
+    0%, 100%  { transform: scaleY(0); }
+    /* blink at ~26% (same as left) */
+    25%, 27%  { transform: scaleY(1); }
+    29%       { transform: scaleY(0); }
+    /* WINK — only right eye closes */
+    43%, 49%  { transform: scaleY(1); }
+    52%       { transform: scaleY(0); }
+    /* blink at ~76% (same as left) */
+    75%, 77%  { transform: scaleY(1); }
+    79%       { transform: scaleY(0); }
 }
 
 /* ── Idle float after landing ── */
@@ -1931,7 +1957,7 @@ a:hover, .stMarkdown a:hover {
     .dna-char { animation: none !important; opacity: 1; transform: translateX(0) translateY(0); margin-left: -40px; }
     .lumi-letter-i { animation: none !important; transform: scaleY(0); opacity: 0; }
     .dna-pupil { animation: none !important; }
-    .dna-eyelid { animation: none !important; transform: scaleY(0); }
+    .dna-eyelid, .dna-eyelid-r { animation: none !important; transform: scaleY(0); }
     .dna-shadow { animation: none !important; opacity: 0.4; }
     .dna-body-group { animation: none !important; }
     .lumi-welcome-sub { animation: none !important; opacity: 1; }

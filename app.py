@@ -22,6 +22,157 @@ if _css:
     st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Authentication Gate — Google OAuth via Streamlit native auth (st.login)
+# Hero landing page is shown to unauthenticated users; the full app requires
+# sign-in so we can persist user data across sessions.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _auth_configured() -> bool:
+    """Check if Google OAuth credentials are configured in secrets."""
+    try:
+        auth = st.secrets.get("auth", {})
+        cid = auth.get("client_id", "")
+        return bool(cid) and "YOUR_GOOGLE" not in cid
+    except Exception:
+        return False
+
+
+def _render_login_hero():
+    """Render the hero landing page with sign-in button for unauthenticated users."""
+    # DNA character SVG (inline — same as chat_followup.py)
+    _dna_svg = (
+        '<svg class="dna-char" viewBox="0 0 36 56" width="80" height="120"'
+        ' style="width:80px!important;height:120px!important;min-width:80px;min-height:120px;max-width:none!important;max-height:none!important"'
+        ' xmlns="http://www.w3.org/2000/svg">'
+        '<ellipse class="dna-shadow" cx="18" cy="54" rx="8" ry="2"/>'
+        '<g class="dna-body-group">'
+        '<line class="dna-rung" x1="8" y1="18" x2="28" y2="18"/>'
+        '<line class="dna-rung" x1="13" y1="24" x2="23" y2="24"/>'
+        '<line class="dna-rung" x1="8" y1="30" x2="28" y2="30"/>'
+        '<line class="dna-rung" x1="13" y1="36" x2="23" y2="36"/>'
+        '<line class="dna-rung" x1="8" y1="42" x2="28" y2="42"/>'
+        '<line class="dna-rung" x1="13" y1="48" x2="23" y2="48"/>'
+        '<path class="dna-strand-blue" '
+        'd="M8,15 C8,19 28,21 28,25 C28,29 8,31 8,35 C8,39 28,41 28,45 C28,49 13,50 13,52"/>'
+        '<path class="dna-strand-green" '
+        'd="M28,15 C28,19 8,21 8,25 C8,29 28,31 28,35 C28,39 8,41 8,45 C8,49 23,50 23,52"/>'
+        '<circle cx="8" cy="18" r="2.2" fill="#007AFF"/>'
+        '<circle cx="28" cy="18" r="2.2" fill="#34C759"/>'
+        '<circle cx="28" cy="30" r="2.2" fill="#007AFF"/>'
+        '<circle cx="8" cy="30" r="2.2" fill="#34C759"/>'
+        '<circle cx="8" cy="42" r="2.2" fill="#007AFF"/>'
+        '<circle cx="28" cy="42" r="2.2" fill="#34C759"/>'
+        '</g>'
+        '<defs>'
+        '<clipPath id="eyeL"><circle cx="12" cy="9" r="5.5"/></clipPath>'
+        '<clipPath id="eyeR"><circle cx="24" cy="9" r="5.5"/></clipPath>'
+        '</defs>'
+        '<circle class="dna-eye-white" cx="12" cy="9" r="5.5"/>'
+        '<circle class="dna-pupil" cx="12.8" cy="9.2" r="2.8"/>'
+        '<circle class="dna-eye-white" cx="24" cy="9" r="5.5"/>'
+        '<circle class="dna-pupil" cx="24.8" cy="9.2" r="2.8"/>'
+        '<circle cx="10.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
+        '<circle cx="22.5" cy="7.5" r="1.2" fill="white" opacity="0.9"/>'
+        '<rect class="dna-eyelid" x="6.5" y="3.5" width="11" height="11"'
+        ' clip-path="url(#eyeL)" fill="#E8E8ED"/>'
+        '<rect class="dna-eyelid dna-eyelid-r" x="18.5" y="3.5" width="11" height="11"'
+        ' clip-path="url(#eyeR)" fill="#E8E8ED"/>'
+        '</svg>'
+    )
+
+    # Vertically center the welcome page content.
+    # Streamlit sanitizes each st.markdown independently, so we can't wrap
+    # native widgets in a custom flexbox div. Instead, style the parent
+    # Streamlit block-container directly. This only applies on this page
+    # because st.stop() prevents the rest of the app from rendering.
+    st.markdown(
+        '<style>'
+        '[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"]'
+        '{ display:flex; flex-direction:column; align-items:center;'
+        '  justify-content:center; min-height:calc(100vh - 60px); }'
+        '</style>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="lumi-welcome-page">'
+        '<div class="lumi-welcome">'
+        '<div class="lumi-title">'
+        'Lum'
+        '<span class="lumi-i-wrapper">'
+        '<span class="lumi-letter-i">i</span>'
+        '<span class="dna-slot">' + _dna_svg + '</span>'
+        '</span>'
+        'nous'
+        '</div>'
+        '<p class="lumi-welcome-sub">'
+        "The AI Structure Interpreter &mdash; decode proteins, mutations, and drugs "
+        "with confidence-aware visualization."
+        '</p>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Sign-in section
+    st.markdown(
+        '<div style="text-align:center;margin-top:24px">'
+        '<p style="font-size:0.95rem;color:rgba(60,60,67,0.6);margin-bottom:16px">'
+        'Sign in with Google to start analyzing proteins</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    _cta_col1, _cta_col2, _cta_col3 = st.columns([2, 1, 2])
+    with _cta_col2:
+        if _auth_configured():
+            st.button(
+                "Sign in with Google",
+                on_click=st.login,
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            st.info(
+                "Auth not configured. Set Google OAuth credentials in "
+                "`.streamlit/secrets.toml` to enable sign-in. "
+                "The app runs without auth for local development."
+            )
+            # Allow bypass for local dev without OAuth
+            if st.button("Continue without sign-in", use_container_width=True):
+                st.session_state["_auth_bypass"] = True
+                st.rerun()
+
+
+# Check authentication
+_is_authed = False
+if _auth_configured():
+    try:
+        _is_authed = st.user.is_logged_in
+    except Exception:
+        _is_authed = False
+else:
+    # Auth not configured — show hero first, allow bypass via button
+    _is_authed = st.session_state.get("_auth_bypass", False)
+
+if not _is_authed:
+    _render_login_hero()
+    st.stop()
+
+# ── User profile persistence (runs on every authenticated page load) ──
+try:
+    if _auth_configured() and st.user.is_logged_in:
+        from src.user_store import upsert_user
+        _user_profile = upsert_user(
+            email=st.user.email,
+            name=st.user.name,
+            picture=getattr(st.user, "picture", None),
+        )
+        st.session_state["user_profile"] = _user_profile
+except Exception:
+    pass  # User store is non-critical
+
+
 # --- Session State Initialization ---
 DEFAULTS = {
     "query_input": "",
@@ -273,7 +424,7 @@ def _render_tamarind_tools():
         with st.expander(f"Tamarind Bio Tools ({len(tools)})"):
             for tool in tools[:15]:
                 st.markdown(
-                    f'<span style="font-size:0.8em;color:#34C759">▸</span> '
+                    f'<span style="font-size:0.8em;color:#047857">▸</span> '
                     f'<span style="font-size:0.82em;color:rgba(60,60,67,0.6)">{tool}</span>',
                     unsafe_allow_html=True,
                 )
@@ -281,8 +432,38 @@ def _render_tamarind_tools():
                 st.caption(f"... and {len(tools) - 15} more tools")
 
 
-# --- Sidebar: Pipeline Status ---
+# --- Sidebar: User Profile + Pipeline Status ---
 with st.sidebar:
+    # ── User Profile ──
+    try:
+        if _auth_configured() and st.user.is_logged_in:
+            _u_name = st.user.name or "User"
+            _u_email = st.user.email or ""
+            _u_pic = getattr(st.user, "picture", None)
+            _pic_html = (
+                f'<img src="{_u_pic}" '
+                f'style="width:32px;height:32px;border-radius:50%;margin-right:10px">'
+                if _u_pic else
+                '<div style="width:32px;height:32px;border-radius:50%;'
+                'background:#007AFF;color:white;display:flex;align-items:center;'
+                f'justify-content:center;font-weight:700;margin-right:10px">'
+                f'{_u_name[0].upper()}</div>'
+            )
+            st.markdown(
+                f'<div style="display:flex;align-items:center;padding:8px 0 12px">'
+                f'{_pic_html}'
+                f'<div>'
+                f'<div style="font-weight:600;font-size:0.9rem;line-height:1.2">{_u_name}</div>'
+                f'<div style="font-size:0.78rem;color:rgba(60,60,67,0.55)">{_u_email}</div>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            st.button("Sign out", on_click=st.logout, key="sidebar_logout")
+            st.divider()
+    except Exception:
+        pass
+
     st.markdown("### Analysis Pipeline")
     from components.pipeline_flow import render_text_pipeline
     render_text_pipeline()
@@ -360,7 +541,7 @@ with st.sidebar:
     with st.expander("Connected Services", expanded=False):
         for name, desc, connected in sponsors:
             status = "Connected" if connected else "Not configured"
-            status_color = "#34C759" if connected else "#8E8E93"
+            status_color = "#047857" if connected else "#8E8E93"
             st.markdown(
                 f'<div style="margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">'
                 f'<span style="font-weight:500;font-size:0.88em">{name}</span>'
