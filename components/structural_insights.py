@@ -108,43 +108,57 @@ def render_structural_insights(
     _render_multi_track_map(analysis, prediction, mutation_pos, pathogenic_positions)
 
     # Cross-Insight Analysis (progressively disclosed)
-    with st.expander("Conservation × Depth Analysis", expanded=bool(mutation_pos)):
-        _render_conservation_depth_scatter(
-            prediction, query, mutation_pos, pathogenic_positions, pocket_residues,
-        )
-        if mutation_pos and pocket_residues:
-            _render_communication_path(prediction, query, mutation_pos, pocket_residues)
+    # Each expander is a @st.fragment so its charts only re-render when
+    # its own widgets change, not on every app-wide rerun.
+    @st.fragment()
+    def _frag_conservation():
+        with st.expander("Conservation × Depth Analysis", expanded=bool(mutation_pos)):
+            _render_conservation_depth_scatter(
+                prediction, query, mutation_pos, pathogenic_positions, pocket_residues,
+            )
+            if mutation_pos and pocket_residues:
+                _render_communication_path(prediction, query, mutation_pos, pocket_residues)
+    _frag_conservation()
 
     # Contact & Packing (detail on demand)
     has_contact = "contact_map" in analysis
     has_packing = "packing_density" in analysis
     if has_contact or has_packing:
-        with st.expander("Contact Map & Packing Density"):
-            col1, col2 = st.columns(2)
-            with col1:
-                if has_contact:
-                    _render_contact_map(analysis, pathogenic_positions, mutation_pos)
-            with col2:
-                if has_packing:
-                    _render_packing_density(analysis, mutation_pos, pathogenic_positions)
+        @st.fragment()
+        def _frag_contact():
+            with st.expander("Contact Map & Packing Density"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if has_contact:
+                        _render_contact_map(analysis, pathogenic_positions, mutation_pos)
+                with col2:
+                    if has_packing:
+                        _render_packing_density(analysis, mutation_pos, pathogenic_positions)
+        _frag_contact()
 
     # Backbone Geometry & Network (detail on demand)
     has_rama = "ramachandran" in analysis
     has_network = "network_centrality" in analysis
     if has_rama or has_network:
-        with st.expander("Backbone Geometry & Network Centrality"):
-            col1, col2 = st.columns(2)
-            with col1:
-                if has_rama:
-                    _render_ramachandran(analysis, mutation_pos, pathogenic_positions)
-            with col2:
-                if has_network:
-                    _render_network_centrality(analysis, mutation_pos, pathogenic_positions)
+        @st.fragment()
+        def _frag_backbone():
+            with st.expander("Backbone Geometry & Network Centrality"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if has_rama:
+                        _render_ramachandran(analysis, mutation_pos, pathogenic_positions)
+                with col2:
+                    if has_network:
+                        _render_network_centrality(analysis, mutation_pos, pathogenic_positions)
+        _frag_backbone()
 
     # Surface Properties (detail on demand, query-relevant)
     if query.question_type in ("druggability", "binding", "structure"):
-        with st.expander("Surface Hydrophobic Patches"):
-            _render_hydrophobic_patches(prediction, query, mutation_pos, pocket_residues)
+        @st.fragment()
+        def _frag_surface():
+            with st.expander("Surface Hydrophobic Patches"):
+                _render_hydrophobic_patches(prediction, query, mutation_pos, pocket_residues)
+        _frag_surface()
 
 
 def _get_pocket_residues(protein_name: str) -> list[int]:

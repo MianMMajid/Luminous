@@ -56,19 +56,38 @@ def render_electrostatics_panel(pdb_content: str, query: ProteinQuery):
     electrostatics_data = st.session_state.get(state_key)
 
     if electrostatics_data is None:
-        # Show compute button
-        st.markdown(
-            "PEP-Patch computes the electrostatic potential at each solvent-"
-            "accessible surface point and maps it back to residues. This "
-            "reveals charged patches that drive binding, solubility, and "
-            "druggability."
-        )
-        if st.button(
-            "Compute Electrostatic Surface",
-            type="primary",
-            key=f"compute_electrostatics_{query.protein_name}",
-        ):
-            _run_peppatch(pdb_content, query, state_key)
+        # Check if a background task is running
+        from src.task_manager import task_manager
+        task_id = f"electrostatics_{query.protein_name}"
+        task_status = task_manager.status(task_id)
+
+        if task_status and task_status.value == "running":
+            st.info("Computing electrostatic surface in the background...")
+            return
+
+        # Check if background task completed
+        task_result = task_manager.get_result(task_id)
+        if task_result is not None:
+            st.session_state[state_key] = task_result
+            electrostatics_data = task_result
+            # Fall through to render
+        else:
+            # Show compute button
+            st.markdown(
+                "PEP-Patch computes the electrostatic potential at each solvent-"
+                "accessible surface point and maps it back to residues. This "
+                "reveals charged patches that drive binding, solubility, and "
+                "druggability."
+            )
+            if st.button(
+                "Compute Electrostatic Surface",
+                type="primary",
+                key=f"compute_electrostatics_{query.protein_name}",
+            ):
+                _run_peppatch_background(pdb_content, query, state_key)
+            return
+
+    if electrostatics_data is None:
         return
 
     # Results are available — render them
@@ -80,41 +99,56 @@ def render_electrostatics_panel(pdb_content: str, query: ProteinQuery):
 # ────────────────────────────────────────────────────────
 
 
-def _run_peppatch(pdb_content: str, query: ProteinQuery, state_key: str):
-    """Submit a PEP-Patch job to Tamarind and store results."""
+def _run_peppatch_sync(pdb_content: str, protein_name: str) -> dict:
+    """Run PEP-Patch synchronously in a background thread (no st.* calls)."""
+    import asyncio
+
     from src.tamarind_client import run_dynamic_tool
 
-    job_name = f"luminous_peppatch_{query.protein_name}_{uuid.uuid4().hex[:6]}"
+    job_name = f"luminous_peppatch_{protein_name}_{uuid.uuid4().hex[:6]}"
 
-    with st.status(
-        "Computing electrostatic surface via Tamarind PEP-Patch...",
-        expanded=True,
-    ) as status:
-        try:
-            st.write("Submitting PEP-Patch job...")
+    loop = asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(
+            run_dynamic_tool(
+                tool_type="peppatch",
+                settings={"structure": pdb_content},
+                job_name=job_name,
+                timeout=300,
+            )
+        )
+    finally:
+        loop.close()
 
-            async def _submit():
-                return await run_dynamic_tool(
-                    tool_type="peppatch",
-                    settings={"structure": pdb_content},
-                    job_name=job_name,
-                    timeout=300,
-                )
+    return _parse_peppatch_impl(result)
 
-            result = run_async(_submit())
 
-            # Parse the PEP-Patch results
-            parsed = _parse_peppatch_result(result)
-            st.session_state[state_key] = parsed
-            status.update(label="Electrostatic surface computed!", state="complete")
+def _run_peppatch_background(pdb_content: str, query: ProteinQuery, state_key: str):
+    """Submit PEP-Patch as a background task via task_manager."""
+    from src.task_manager import task_manager
 
-        except Exception as e:
-            status.update(label="PEP-Patch computation failed", state="error")
-            st.error(f"Tamarind PEP-Patch error: {e}")
+    task_id = f"electrostatics_{query.protein_name}"
+    task_manager.submit(
+        task_id=task_id,
+        fn=_run_peppatch_sync,
+        args=(pdb_content, query.protein_name),
+        label="Computing electrostatic surface (PEP-Patch)",
+        target_keys={"__direct__": state_key},
+    )
+
+
+def _parse_peppatch_impl(result: dict) -> dict:
+    """Parse PEP-Patch output (plain function, safe for background threads)."""
+    return _parse_peppatch_core(result)
 
 
 @st.cache_data(show_spinner=False)
 def _parse_peppatch_result(result: dict) -> dict:
+    """Cached wrapper for Streamlit context."""
+    return _parse_peppatch_core(result)
+
+
+def _parse_peppatch_core(result: dict) -> dict:
     """Parse PEP-Patch output into a structured dict.
 
     PEP-Patch returns per-residue electrostatic potential values.

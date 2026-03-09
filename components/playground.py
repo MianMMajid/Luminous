@@ -122,7 +122,7 @@ def render_playground():
     st.markdown(
         '<div class="lumi-tab-header">'
         '<div class="tab-title">Workspace</div>'
-        '<div class="tab-subtitle">Compare, overlay, and explore your collected insights</div>'
+        '<div class="tab-subtitle">Compare and explore insights &middot; Claude generates experiment plans from pinned data</div>'
         '</div>',
         unsafe_allow_html=True,
     )

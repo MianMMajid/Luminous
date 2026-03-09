@@ -31,15 +31,13 @@
 /* --- Global Polish --- */
 
 /* Prevent Streamlit's default "script is running" dimming.
-   Streamlit applies opacity ~0.33 + pointer-events:none on the main
-   block container while the script re-executes, causing the whole page
-   to flash white. We keep it fully opaque and let individual spinners
-   or skeleton loaders communicate progress instead. */
-[data-testid="stAppViewContainer"],
-[data-testid="stMainBlockContainer"],
-.stMain [data-testid="stVerticalBlockBorderWrapper"] {
+   During reruns Streamlit applies STALE_STYLES (opacity:0.33,
+   transition:opacity 1s ease-in 0.5s) to every stElementContainer
+   with data-stale="true". This washes the whole page white.
+   Override it so only explicit spinners communicate progress. */
+[data-testid="stElementContainer"][data-stale="true"] {
     opacity: 1 !important;
-    transition: opacity 0s !important;
+    transition: none !important;
 }
 
 .block-container {
@@ -1489,7 +1487,7 @@ a:hover, .stMarkdown a:hover {
     color: #ffffff !important;
     border-color: #007AFF !important;
 }
-/* Center pills — force every ancestor and child to center */
+/* Center pills — nuclear option: every layer must center */
 [data-testid="element-container"]:has([data-testid="stPills"]) {
     display: flex !important;
     justify-content: center !important;
@@ -1497,23 +1495,34 @@ a:hover, .stMarkdown a:hover {
 }
 [data-testid="stPills"] {
     max-width: 640px !important;
-    width: 100% !important;
+    width: fit-content !important;
     margin-left: auto !important;
     margin-right: auto !important;
     text-align: center !important;
     padding: 0 12px !important;
     box-sizing: border-box !important;
 }
-/* Center the actual button row inside pills */
-[data-testid="stPills"] > div,
+/* Override Streamlit's internal pill scroll container — force wrap + center */
+[data-testid="stPills"] > div {
+    display: flex !important;
+    justify-content: center !important;
+    width: 100% !important;
+    overflow-x: visible !important;
+}
 [data-testid="stPills"] > div > div,
-[data-testid="stPills"] div,
-[data-testid="stPills"] [role="radiogroup"],
-[data-testid="stPills"] [role="group"] {
+[data-testid="stPills"] div[role="radiogroup"],
+[data-testid="stPills"] div[role="group"],
+[data-testid="stPills"] > div > div > div {
+    display: flex !important;
     justify-content: center !important;
     flex-wrap: wrap !important;
     gap: 6px 8px !important;
     width: 100% !important;
+    overflow-x: visible !important;
+    scrollbar-width: none !important;
+}
+[data-testid="stPills"] > div > div::-webkit-scrollbar {
+    display: none !important;
 }
 /* Force the stBottom chat input container to center-align with pills */
 [data-testid="stBottom"] [data-testid="stVerticalBlock"],

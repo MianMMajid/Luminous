@@ -20,6 +20,9 @@ else
   echo "No GOOGLE_CLIENT_ID set — running without OAuth"
 fi
 
+# ── Performance: cache matplotlib fonts ──
+export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/bioxyc-mpl}"
+
 # ── Start Streamlit ──
 exec streamlit run app.py \
   --server.port="${PORT:-8501}" \

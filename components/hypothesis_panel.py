@@ -78,6 +78,24 @@ def render_hypothesis_panel(
 
     st.markdown(hypotheses)
 
+    # Show variant context alongside hypotheses if available
+    if variant_data and isinstance(variant_data, dict) and variant_data.get("variants"):
+        variants = variant_data["variants"]
+        pathogenic = [v for v in variants if v.get("significance", "").lower() in ("pathogenic", "likely_pathogenic")]
+        if pathogenic:
+            with st.expander(f"Variant Context ({len(pathogenic)} pathogenic variants referenced)", expanded=False):
+                for v in pathogenic[:8]:
+                    pos = v.get("position", "?")
+                    change = v.get("change", v.get("hgvs", ""))
+                    sig = v.get("significance", "")
+                    source = v.get("source", "")
+                    st.markdown(
+                        f"- **Position {pos}** {change} — _{sig}_ "
+                        f"{'(' + source + ')' if source else ''}"
+                    )
+                if len(pathogenic) > 8:
+                    st.caption(f"... and {len(pathogenic) - 8} more pathogenic variants")
+
     # Next steps callout
     st.divider()
     _render_next_steps(query, trust_audit)

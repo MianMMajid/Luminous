@@ -60,7 +60,8 @@ def render_sketch_hypothesis():
         '<div class="lumi-tab-header">'
         '<div class="tab-title">Sketch Your Hypothesis</div>'
         '<div class="tab-subtitle">Draw a rough pathway or mechanism diagram. '
-        'Click <b>Send to Lumi</b> when ready for AI interpretation.</div>'
+        'Click <b>Send to Lumi</b> &mdash; Claude Vision interprets your sketch, '
+        'Extended Thinking generates testable hypotheses.</div>'
         '</div>',
         unsafe_allow_html=True,
     )

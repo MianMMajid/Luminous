@@ -444,6 +444,8 @@ def _submit_prediction_background(query: ProteinQuery, backend: str) -> bool:
     use_msa = st.session_state.get("boltz_use_msa", True)
     predict_affinity = st.session_state.get("boltz_predict_affinity", True)
 
+    skipped: list[str] = []
+
     if backend in ("auto", "tamarind"):
         from src.config import TAMARIND_API_KEY
         if TAMARIND_API_KEY:
@@ -461,6 +463,8 @@ def _submit_prediction_background(query: ProteinQuery, backend: str) -> bool:
                 target_keys={"__direct__": "_prediction_raw"},
             )
             return True
+        else:
+            skipped.append("Tamarind (no API key)")
 
     if backend in ("auto", "modal"):
         from src.modal_client import is_modal_available
@@ -475,7 +479,11 @@ def _submit_prediction_background(query: ProteinQuery, backend: str) -> bool:
                 target_keys={"__direct__": "_prediction_raw"},
             )
             return True
+        else:
+            skipped.append("Modal (not configured)")
 
+    if skipped:
+        st.caption(f"Skipped backends: {', '.join(skipped)}")
     return False
 
 
