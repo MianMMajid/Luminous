@@ -91,6 +91,28 @@ def _kick_chat_agent(query, prediction, trust_audit, bio_context):
     _submit_chat_background(messages, session_context, query)
 
 
+def _try_auto_parse(text: str):
+    """Try to parse the user's text into a ProteinQuery and populate session state.
+
+    This bridges the Lumi tab → Search/Structure/Biology tabs: if the user
+    enters a protein query in the chat, we parse it so downstream tabs
+    (Structure, Biology, Report) can render results immediately.
+    """
+    if st.session_state.get("query_parsed"):
+        return  # already parsed — don't overwrite
+
+    try:
+        from src.query_parser import parse_query
+
+        parsed = parse_query(text)
+        if parsed and parsed.protein_name and parsed.protein_name.lower() != "unknown":
+            st.session_state["parsed_query"] = parsed
+            st.session_state["raw_query"] = text
+            st.session_state["query_parsed"] = True
+    except Exception:
+        pass  # parsing failed — that's fine, chat still works
+
+
 def _kick_standalone_agent():
     """Build context and submit standalone agent call to background.
 
@@ -275,20 +297,23 @@ def _render_welcome_empty():
         unsafe_allow_html=True,
     )
 
-    # Centered suggestions (CSS handles centering via [data-testid="stPills"])
+    # Centered suggestions — use equal columns so pills sit in the true center
     if not st.session_state.get("_chat_thinking"):
         _welcome_suggestions = [
             "Tell me about TP53 and its role in cancer",
             "What drugs target EGFR?",
             "Is KRAS G12C druggable?",
         ]
-        picked = st.pills(
-            "Suggestions", _welcome_suggestions,
-            key="welcome_suggest_pills",
-            label_visibility="collapsed",
-        )
+        _lpad, _pcol, _rpad = st.columns([1, 4, 1])
+        with _pcol:
+            picked = st.pills(
+                "Suggestions", _welcome_suggestions,
+                key="welcome_suggest_pills",
+                label_visibility="collapsed",
+            )
         if picked:
             st.session_state["chat_messages"] = [{"role": "user", "content": picked}]
+            _try_auto_parse(picked)
             _kick_standalone_agent()
             st.rerun()
 
@@ -674,6 +699,7 @@ def _render_standalone_chat_input_only():
             _handle_uploaded_files(prompt.files)
         if text.strip():
             st.session_state["chat_messages"].append({"role": "user", "content": text})
+            _try_auto_parse(text)
             _kick_standalone_agent()
             st.rerun()
 
@@ -703,6 +729,7 @@ def _render_standalone_chat():
                 st.session_state["chat_messages"].append(
                     {"role": "user", "content": suggestion}
                 )
+                _try_auto_parse(suggestion)
                 _kick_standalone_agent()
                 st.rerun()
 
@@ -724,6 +751,7 @@ def _render_standalone_chat():
             _handle_uploaded_files(prompt.files)
         if text.strip():
             st.session_state["chat_messages"].append({"role": "user", "content": text})
+            _try_auto_parse(text)
             _kick_standalone_agent()
             st.rerun()
 
