@@ -413,7 +413,7 @@ def _fetch_tamarind_tools() -> list[str]:
         resp = httpx.get(
             "https://app.tamarind.bio/api/tools",
             headers={"x-api-key": key},
-            timeout=10,
+            timeout=3,
         )
         if resp.status_code == 200:
             data = resp.json()

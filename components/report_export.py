@@ -5,15 +5,20 @@ import json
 import zipfile
 from datetime import datetime
 
-import plotly.graph_objects as go
 import streamlit as st
 
 from src.models import BioContext, PredictionResult, ProteinQuery, TrustAudit
 from src.utils import confidence_emoji, safe_json_dumps, trust_to_color, trust_to_label
 
+go = None  # lazy-loaded
+
 
 def render_report_export():
     """Tab 4: Report generation, Plotly figures, and downloads."""
+    global go
+    if go is None:
+        import plotly.graph_objects as _go
+        go = _go
     if not st.session_state.get("query_parsed") or not st.session_state.get("prediction_result"):
         from components.empty_state import render_empty_state
         render_empty_state("report")
