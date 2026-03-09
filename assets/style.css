@@ -29,9 +29,25 @@
 }
 
 /* --- Global Polish --- */
+
+/* Prevent Streamlit's default "script is running" dimming.
+   Streamlit applies opacity ~0.33 + pointer-events:none on the main
+   block container while the script re-executes, causing the whole page
+   to flash white. We keep it fully opaque and let individual spinners
+   or skeleton loaders communicate progress instead. */
+[data-testid="stAppViewContainer"],
+[data-testid="stMainBlockContainer"],
+.stMain [data-testid="stVerticalBlockBorderWrapper"] {
+    opacity: 1 !important;
+    transition: opacity 0s !important;
+}
+
 .block-container {
     padding-top: 0 !important;
     padding-bottom: 60px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    max-width: 100% !important;
     letter-spacing: -0.2px;
 }
 /* Remove Streamlit's default top header spacing */
@@ -1473,10 +1489,11 @@ a:hover, .stMarkdown a:hover {
     color: #ffffff !important;
     border-color: #007AFF !important;
 }
-/* Center pills — multiple strategies for cross-browser reliability */
+/* Center pills — force every ancestor and child to center */
 [data-testid="element-container"]:has([data-testid="stPills"]) {
     display: flex !important;
     justify-content: center !important;
+    width: 100% !important;
 }
 [data-testid="stPills"] {
     max-width: 640px !important;
@@ -1487,6 +1504,7 @@ a:hover, .stMarkdown a:hover {
     padding: 0 12px !important;
     box-sizing: border-box !important;
 }
+/* Center the actual button row inside pills */
 [data-testid="stPills"] > div,
 [data-testid="stPills"] > div > div,
 [data-testid="stPills"] div,
@@ -1495,6 +1513,14 @@ a:hover, .stMarkdown a:hover {
     justify-content: center !important;
     flex-wrap: wrap !important;
     gap: 6px 8px !important;
+    width: 100% !important;
+}
+/* Force the stBottom chat input container to center-align with pills */
+[data-testid="stBottom"] [data-testid="stVerticalBlock"],
+[data-testid="stBottom"] [data-testid="element-container"] {
+    display: flex !important;
+    justify-content: center !important;
+    width: 100% !important;
 }
 @media (max-width: 768px) {
     [data-testid="stPills"] {
