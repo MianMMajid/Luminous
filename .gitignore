@@ -3,4 +3,5 @@
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+data/users.db
 test_report.pdf
