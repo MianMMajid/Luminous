@@ -257,7 +257,7 @@ def render_structure_viewer():
 
                     if st.button("Send to Statistics", key="struct_send_stats",
                                  help="Send pLDDT data to the Statistics tab for analysis",
-                                 use_container_width=True):
+                                 width="stretch"):
                         n = min(
                             len(prediction.residue_ids),
                             len(prediction.chain_ids),
@@ -284,7 +284,7 @@ def render_structure_viewer():
                     )
                     if st.button("Download All Residue Data (CSV)", key="export_residue_csv",
                                  help="Export comprehensive per-residue analysis as CSV",
-                                 use_container_width=True):
+                                 width="stretch"):
                         data = {"residue_id": prediction.residue_ids[:n]}
                         if prediction.chain_ids:
                             data["chain"] = prediction.chain_ids[:n]
@@ -1084,7 +1084,7 @@ def _render_flexibility_overlay(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Key metrics
     mcol1, mcol2, mcol3 = st.columns(3)
@@ -1444,7 +1444,7 @@ def _render_guided_tour(
             if st.button(
                 f"{stop['icon']} {stop['label']}",
                 key=f"tour_{stop['key']}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state["tour_focus"] = stop.get("residues")
                 st.session_state["tour_stop"] = stop["key"]
@@ -1660,7 +1660,7 @@ def _render_charge_surface(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Key metrics
     summary = charge_data.get("summary", {})
@@ -1868,7 +1868,7 @@ def _render_structure_diff(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Quality assessment
     qa = diff_result.get("quality_assessment")
@@ -2035,7 +2035,7 @@ def _render_alphamissense_overlay(
             xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
             yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Mutation-specific pathogenicity
     if query.mutation:
@@ -2273,7 +2273,7 @@ def _render_domain_overlay(
             ),
             showlegend=True,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     _render_provenance_badge(prediction)
 
@@ -2732,7 +2732,7 @@ def _render_psn_graph(psn_data: dict, query: ProteinQuery):
         font=dict(family="Inter, system-ui, sans-serif"),
     )
 
-    st.plotly_chart(fig, use_container_width=True, key="psn_landscape_chart")
+    st.plotly_chart(fig, width="stretch", key="psn_landscape_chart")
 
     st.caption(
         "Each dot is a residue. Height = allosteric importance (betweenness centrality). "
@@ -3071,7 +3071,7 @@ def _render_auto_analyze(query: ProteinQuery, prediction: PredictionResult):
         type="primary",
         key="auto_analyze_btn",
         help="Automatically runs flexibility, pocket prediction, surface analysis, and disorder detection",
-        use_container_width=True,
+        width="stretch",
     ):
         first_chain = prediction.chain_ids[0] if prediction.chain_ids else "A"
         progress = st.progress(0, text="Starting analyses...")

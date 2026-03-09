@@ -58,7 +58,7 @@ def render_query_input():
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-                if col.button(ex["label"], use_container_width=True, key=f"ex_{ex['label']}"):
+                if col.button(ex["label"], width="stretch", key=f"ex_{ex['label']}"):
                     st.session_state[_TEXT_KEY] = ex["query"]
                     st.session_state["_example_data"] = ex
                     _do_parse(ex["query"], ex)
@@ -113,7 +113,7 @@ def render_query_input():
     col1, col2 = st.columns([1, 3], gap="small")
     with col1:
         parse_clicked = st.button(
-            "Analyze", type="primary", use_container_width=True
+            "Analyze", type="primary", width="stretch"
         )
 
     if parse_clicked and user_input.strip():

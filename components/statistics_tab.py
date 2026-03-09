@@ -193,7 +193,7 @@ def _render_paste_entry():
     edited = st.data_editor(
         df,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         key="stats_data_editor",
     )
     if edited is not None:
@@ -452,7 +452,7 @@ def _render_data_preview(df: pd.DataFrame):
 
     # DataFrame preview
     with st.expander("Data preview (first 20 rows)", expanded=False):
-        st.dataframe(df.head(20), use_container_width=True)
+        st.dataframe(df.head(20), width="stretch")
 
 
 # ===================================================================
@@ -880,15 +880,15 @@ def _display_test_results(test_name: str, result: dict, df: pd.DataFrame, sel: d
     result_df = result.get("result_df")
     if result_df:
         if isinstance(result_df, list):
-            st.dataframe(pd.DataFrame(result_df), use_container_width=True)
+            st.dataframe(pd.DataFrame(result_df), width="stretch")
         elif isinstance(result_df, dict):
-            st.dataframe(pd.DataFrame(result_df), use_container_width=True)
+            st.dataframe(pd.DataFrame(result_df), width="stretch")
 
     # Post-hoc table
     posthoc_df = result.get("posthoc_df")
     if posthoc_df:
         with st.expander("Post-hoc pairwise comparisons", expanded=False):
-            st.dataframe(pd.DataFrame(posthoc_df), use_container_width=True)
+            st.dataframe(pd.DataFrame(posthoc_df), width="stretch")
 
     # NaN removal notice
     nan_removed = result.get("nan_removed", 0)
@@ -981,7 +981,7 @@ def _display_test_results(test_name: str, result: dict, df: pd.DataFrame, sel: d
         st.caption(f"Chart could not be rendered: {e}")
 
     if fig is not None:
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # Pin button
         summary = _interpret_result(result) or f"{test_name} result"
@@ -1185,7 +1185,7 @@ def _display_fit_results(
             "CI Lower": result["param_ci95"].get(name, (None, None))[0],
             "CI Upper": result["param_ci95"].get(name, (None, None))[1],
         })
-    st.dataframe(pd.DataFrame(param_data), use_container_width=True)
+    st.dataframe(pd.DataFrame(param_data), width="stretch")
 
     if result.get("nan_removed", 0) > 0:
         st.caption(f"{result['nan_removed']} row(s) with missing values were excluded.")
@@ -1195,7 +1195,7 @@ def _display_fit_results(
         x_data, y_data, result,
         x_label=x_label, y_label=y_label, equation_name=eq_name,
     )
-    st.plotly_chart(fig_fit, use_container_width=True)
+    st.plotly_chart(fig_fit, width="stretch")
 
     res_col, qq_col = st.columns(2)
     with res_col:
@@ -1203,11 +1203,11 @@ def _display_fit_results(
             x_data[:len(result["residuals"])],
             np.array(result["residuals"]),
         )
-        st.plotly_chart(fig_res, use_container_width=True)
+        st.plotly_chart(fig_res, width="stretch")
 
     with qq_col:
         fig_qq = build_qq_plot(np.array(result["residuals"]))
-        st.plotly_chart(fig_qq, use_container_width=True)
+        st.plotly_chart(fig_qq, width="stretch")
 
     # Pin button
     pin_button(
@@ -1299,7 +1299,7 @@ def _render_survival_section():
         edited = st.data_editor(
             surv_df,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="stats_surv_editor",
         )
         if edited is not None:
@@ -1336,7 +1336,7 @@ def _render_survival_section():
     if not valid_events.isin([0, 1]).all():
         st.warning("The **event** column should contain only 0 (censored) and 1 (event). Non-{0,1} values detected.")
 
-    st.dataframe(surv_df.head(10), use_container_width=True)
+    st.dataframe(surv_df.head(10), width="stretch")
 
     has_group = "group" in surv_df.columns
 
@@ -1382,7 +1382,7 @@ def _render_survival_section():
             return
 
         fig = build_survival_chart(km_result)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # Median survival
         medians = km_result.get("median_survival", {})
@@ -1445,7 +1445,7 @@ def _render_survival_section():
             # Summary table
             summary_df = cox_result.get("summary_df")
             if summary_df:
-                st.dataframe(pd.DataFrame(summary_df), use_container_width=True)
+                st.dataframe(pd.DataFrame(summary_df), width="stretch")
 
             # Concordance
             conc = cox_result.get("concordance")
@@ -1536,7 +1536,7 @@ def _render_pca(df: pd.DataFrame, numeric_cols: list[str]):
 
         # Scree plot
         fig_scree = build_scree_plot(result["explained_variance_ratio"])
-        st.plotly_chart(fig_scree, use_container_width=True)
+        st.plotly_chart(fig_scree, width="stretch")
 
         # Biplot
         fig_biplot = build_pca_biplot(
@@ -1545,7 +1545,7 @@ def _render_pca(df: pd.DataFrame, numeric_cols: list[str]):
             result["columns_used"],
             result["explained_variance_ratio"],
         )
-        st.plotly_chart(fig_biplot, use_container_width=True)
+        st.plotly_chart(fig_biplot, width="stretch")
 
         # Variance explained
         total_var = sum(result["explained_variance_ratio"]) * 100
@@ -1587,7 +1587,7 @@ def _render_kmeans(df: pd.DataFrame, numeric_cols: list[str]):
 
         # Elbow plot
         fig_elbow = build_elbow_plot(result["k_values"], result["inertias"])
-        st.plotly_chart(fig_elbow, use_container_width=True)
+        st.plotly_chart(fig_elbow, width="stretch")
 
         # Results
         optimal_k = result.get("chosen_k", 2)
@@ -1602,7 +1602,7 @@ def _render_kmeans(df: pd.DataFrame, numeric_cols: list[str]):
             cluster_df = df[numeric_cols].copy()
             cluster_df["cluster"] = result["labels"]
             with st.expander("Clustered data", expanded=False):
-                st.dataframe(cluster_df.head(50), use_container_width=True)
+                st.dataframe(cluster_df.head(50), width="stretch")
 
         pin_button(
             title="K-means Elbow",
@@ -1655,9 +1655,9 @@ def _render_multiple_regression(df: pd.DataFrame, numeric_cols: list[str]):
         coef_df = result.get("coefficients_df") or result.get("result_df")
         if coef_df:
             if isinstance(coef_df, list):
-                st.dataframe(pd.DataFrame(coef_df), use_container_width=True)
+                st.dataframe(pd.DataFrame(coef_df), width="stretch")
             elif isinstance(coef_df, dict):
-                st.dataframe(pd.DataFrame(coef_df), use_container_width=True)
+                st.dataframe(pd.DataFrame(coef_df), width="stretch")
 
         # VIF
         vif = result.get("vif")
@@ -1676,7 +1676,7 @@ def _render_multiple_regression(df: pd.DataFrame, numeric_cols: list[str]):
                 np.array(result["y_pred"]),
                 np.array(result["residuals"]),
             )
-            st.plotly_chart(fig_diag, use_container_width=True)
+            st.plotly_chart(fig_diag, width="stretch")
 
             pin_button(
                 title="Multiple Regression Diagnostics",
@@ -1724,7 +1724,7 @@ def _render_claude_analysis_section(df: pd.DataFrame):
     for i, prompt in enumerate(_CLAUDE_EXAMPLES[:9]):
         with cols[i % 3]:
             short = prompt[:48] + "…" if len(prompt) > 48 else prompt
-            if st.button(short, key=f"stats_cex_{i}", use_container_width=True):
+            if st.button(short, key=f"stats_cex_{i}", width="stretch"):
                 st.session_state["_claude_pending_prompt"] = prompt
                 st.rerun()
 
@@ -1856,15 +1856,15 @@ def _render_claude_results():
         # Tables
         for j, tbl in enumerate(r.get("tables", [])):
             if isinstance(tbl, pd.DataFrame):
-                st.dataframe(tbl, use_container_width=True)
+                st.dataframe(tbl, width="stretch")
             elif isinstance(tbl, dict):
-                st.dataframe(pd.DataFrame(tbl), use_container_width=True)
+                st.dataframe(pd.DataFrame(tbl), width="stretch")
 
         # Figures (stored as JSON strings)
         for j, fig_json in enumerate(r.get("figures", [])):
             try:
                 fig = go.Figure(json.loads(fig_json) if isinstance(fig_json, str) else fig_json)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 pin_button(
                     title=f"Claude: {r.get('prompt', '')[:40]}",
                     summary=r.get("text", "")[:200],

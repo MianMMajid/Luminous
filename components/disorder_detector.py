@@ -310,7 +310,7 @@ def _render_classification_chart(
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Legend
     legend_items = [

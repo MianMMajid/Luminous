@@ -83,7 +83,7 @@ def _load_from_project():
                 if st.button(
                     pf.stem,
                     key=f"compare_recent_{pf.name}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     try:
                         data = json.loads(pf.read_text())
@@ -107,7 +107,7 @@ def _load_from_precomputed():
         key="compare_example_select",
     )
 
-    if st.button("Load Comparison", key="load_compare_btn", use_container_width=True):
+    if st.button("Load Comparison", key="load_compare_btn", width="stretch"):
         from src.utils import load_precomputed, parse_pdb_plddt
 
         example_key = examples[selected]
@@ -290,7 +290,7 @@ def _render_side_by_side(
         )
 
     # Clear comparison button
-    if st.button("Clear Comparison", key="clear_compare", use_container_width=True):
+    if st.button("Clear Comparison", key="clear_compare", width="stretch"):
         st.session_state.pop("comparison_data", None)
 
 
@@ -348,7 +348,7 @@ def _render_plddt_overlay(
             for t, c in [(90, "#007AFF"), (70, "#5AC8FA"), (50, "#FFCC00")]
         ],
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_difference_chart(
@@ -388,7 +388,7 @@ def _render_difference_chart(
         height=250,
         margin=dict(t=10, b=40, l=50, r=20),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Summary of biggest differences
     abs_diffs = [(r, d) for r, d in zip(common, diffs)]

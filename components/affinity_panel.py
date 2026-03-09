@@ -94,7 +94,7 @@ def _render_pose_comparison(poses: list[dict]):
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_pose_gallery(poses: list[dict]):

@@ -134,7 +134,7 @@ def _render_login_hero():
                 "Sign in with Google",
                 on_click=st.login,
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
         else:
             st.info(
@@ -143,7 +143,7 @@ def _render_login_hero():
                 "The app runs without auth for local development."
             )
             # Allow bypass for local dev without OAuth
-            if st.button("Continue without sign-in", use_container_width=True):
+            if st.button("Continue without sign-in", width="stretch"):
                 st.session_state["_auth_bypass"] = True
                 st.rerun()
 

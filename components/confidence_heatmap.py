@@ -68,7 +68,7 @@ def _render_true_pae(pae_matrix: list[list[float]], residue_ids: list[int]):
         margin=dict(t=10, b=50, l=50, r=20),
         yaxis=dict(autorange="reversed"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_estimated_pae(
@@ -153,4 +153,4 @@ def _render_estimated_pae(
         yaxis=dict(autorange="reversed"),
         shapes=shapes,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")

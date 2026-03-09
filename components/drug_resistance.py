@@ -252,7 +252,7 @@ def _render_pocket_confidence(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_resistance_heatmap(mutations_db: dict, query_mutation: str | None):
@@ -349,7 +349,7 @@ def _render_resistance_heatmap(mutations_db: dict, query_mutation: str | None):
         xaxis=dict(side="bottom", tickangle=-30),
         yaxis=dict(autorange="reversed"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Legend
     st.markdown(
