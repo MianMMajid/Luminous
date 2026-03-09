@@ -209,9 +209,22 @@ def run_async(coro):
     return _event_loop.run_until_complete(coro)
 
 
-@functools.lru_cache(maxsize=16)
 def load_precomputed(example_name: str) -> dict | None:
-    """Load precomputed results for demo fallback."""
+    """Load precomputed results for demo fallback.
+
+    Uses an internal lru_cache for disk I/O, but returns a deep copy
+    each time so callers can safely mutate the result.
+    """
+    cached = _load_precomputed_raw(example_name)
+    if cached is None:
+        return None
+    import copy
+    return copy.deepcopy(cached)
+
+
+@functools.lru_cache(maxsize=16)
+def _load_precomputed_raw(example_name: str) -> dict | None:
+    """Internal cached loader — callers should use load_precomputed()."""
     base = Path("data/precomputed") / example_name
     if not base.exists():
         return None

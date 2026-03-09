@@ -344,22 +344,29 @@ def _render_pdf_viewer(
 
     with pdf_col:
         st.markdown("#### Report Preview")
-        # Embed PDF via st.components.v1.html — renders in a dedicated iframe
-        # with explicit height and fewer CSP restrictions than st.markdown,
-        # allowing the browser's native PDF viewer to display the data: URI.
+        # Embed PDF using a Blob URL created in JS. data: URIs are blocked
+        # by Chrome for PDF embedding.  Converting to a Blob and creating
+        # an object URL bypasses this restriction while keeping everything
+        # in-memory (no server round-trip).
         import streamlit.components.v1 as _stc
 
         b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-        data_uri = f"data:application/pdf;base64,{b64_pdf}"
         _stc.html(
-            f'<object data="{data_uri}" '
-            f'type="application/pdf" '
-            f'width="100%" height="100%" '
-            f'style="border:1px solid rgba(0,0,0,0.1);border-radius:8px">'
-            f'<p style="padding:40px;text-align:center;color:#666;font-family:system-ui">'
-            f'PDF preview not supported in this browser. '
-            f'Use the <b>Download PDF Report</b> button above.</p>'
-            f'</object>',
+            f"""<div id="pdf-container" style="width:100%;height:100%"></div>
+<script>
+(function() {{
+    var b64 = "{b64_pdf}";
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    var blob = new Blob([bytes], {{type: "application/pdf"}});
+    var url = URL.createObjectURL(blob);
+    var container = document.getElementById("pdf-container");
+    container.innerHTML = '<embed src="' + url + '" type="application/pdf" '
+        + 'width="100%" height="680" '
+        + 'style="border:1px solid rgba(0,0,0,0.1);border-radius:8px" />';
+}})();
+</script>""",
             height=700,
         )
 
