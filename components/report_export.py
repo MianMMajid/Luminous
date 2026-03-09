@@ -237,7 +237,7 @@ def _render_pdf_download(
             use_container_width=True,
             key=f"gen_pdf{key_suffix}",
         ):
-            with st.status("Generating PDF report..."):
+            with st.spinner("Generating PDF..."):
                 try:
                     from src.pdf_report import generate_pdf_report
 
@@ -339,15 +339,24 @@ def _render_pdf_viewer(
 
     with pdf_col:
         st.markdown("#### Report Preview")
-        # Embed PDF as base64 iframe
+        # Embed PDF via st.components.v1.html — renders in a dedicated iframe
+        # with explicit height and fewer CSP restrictions than st.markdown,
+        # allowing the browser's native PDF viewer to display the data: URI.
+        import streamlit.components.v1 as _stc
+
         b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-        pdf_iframe = (
-            f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
-            f'width="100%" height="700" '
-            f'style="border:1px solid rgba(0,0,0,0.1);border-radius:8px" '
-            f'type="application/pdf"></iframe>'
+        data_uri = f"data:application/pdf;base64,{b64_pdf}"
+        _stc.html(
+            f'<object data="{data_uri}" '
+            f'type="application/pdf" '
+            f'width="100%" height="100%" '
+            f'style="border:1px solid rgba(0,0,0,0.1);border-radius:8px">'
+            f'<p style="padding:40px;text-align:center;color:#666;font-family:system-ui">'
+            f'PDF preview not supported in this browser. '
+            f'Use the <b>Download PDF Report</b> button above.</p>'
+            f'</object>',
+            height=700,
         )
-        st.markdown(pdf_iframe, unsafe_allow_html=True)
 
     if video_col is not None and video_bytes:
         with video_col:
