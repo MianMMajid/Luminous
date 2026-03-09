@@ -231,8 +231,7 @@ def _render_welcome_empty():
         'nous'
         '</div>'
         '<p class="lumi-welcome-sub">'
-        "Hey, I'm Lumi! Ask me anything about proteins, mutations, or drugs "
-        "&mdash; I'll search the databases and figure it out together."
+        "Shed light on the data"
         '</p>'
         '</div>'
         '</div>',

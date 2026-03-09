@@ -7,10 +7,12 @@ All widget keys use the ``stats_`` prefix to avoid collisions.
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from components.playground import pin_button
@@ -918,7 +920,6 @@ def _display_test_results(test_name: str, result: dict, df: pd.DataFrame, sel: d
             # Simple scatter without fit
             x_vals = df[sel["x"]].dropna().values
             y_vals = df[sel["y"]].dropna().values
-            import plotly.graph_objects as go
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=x_vals, y=y_vals, mode="markers",

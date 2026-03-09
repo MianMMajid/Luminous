@@ -107,8 +107,7 @@ def _render_login_hero():
         'nous'
         '</div>'
         '<p class="lumi-welcome-sub">'
-        "The AI Structure Interpreter &mdash; decode proteins, mutations, and drugs "
-        "with confidence-aware visualization."
+        "Shed light on the data"
         '</p>'
         '</div>'
         '</div>',
@@ -152,8 +151,16 @@ if _auth_configured():
     except Exception:
         _is_authed = False
 else:
-    # Auth not configured — show hero first, allow bypass via button
+    # Auth not configured — allow through for local development
     _is_authed = st.session_state.get("_auth_bypass", False)
+
+# Local dev bypass: skip auth gate when running on localhost
+try:
+    _host = st.context.headers.get("Host", "")
+    if "localhost" in _host or "127.0.0.1" in _host:
+        _is_authed = True
+except Exception:
+    pass
 
 if not _is_authed:
     _render_login_hero()
