@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-import signal
 import time
 import traceback
 from typing import Any
@@ -144,14 +143,6 @@ def _make_safe_builtins() -> dict:
 # Code execution sandbox
 # ---------------------------------------------------------------------------
 
-class _AnalysisTimeout(Exception):
-    pass
-
-
-def _timeout_handler(_signum: int, _frame: Any):
-    raise _AnalysisTimeout("Analysis timed out (30 s). Try simplifying your request or reducing data size.")
-
-
 def execute_analysis_code(
     code: str,
     df: pd.DataFrame,
@@ -186,20 +177,29 @@ def execute_analysis_code(
         "results": {"tables": [], "figures": [], "text": "", "warnings": []},
     }
 
-    # Set alarm timeout (Unix only — fine for macOS)
-    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(timeout_seconds)
+    # Run code with a threading-based timeout (signal.alarm doesn't work
+    # in Streamlit's worker threads).
+    exec_error: list = []
+    def _run():
+        try:
+            exec(compile(code, "<claude_analysis>", "exec"), namespace)  # noqa: S102
+        except Exception as e:
+            exec_error.append(e)
 
-    try:
-        exec(compile(code, "<claude_analysis>", "exec"), namespace)  # noqa: S102
-    except _AnalysisTimeout as e:
-        return _error_result(str(e), code, start)
-    except Exception as e:
-        tb = traceback.format_exc()
-        return _error_result(f"{type(e).__name__}: {e}\n\n{tb}", code, start)
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    import threading
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seconds)
+    if t.is_alive():
+        return _error_result(
+            f"Analysis timed out after {timeout_seconds}s", code, start
+        )
+    if exec_error:
+        e = exec_error[0]
+        tb = traceback.format_exception(type(e), e, e.__traceback__)
+        return _error_result(
+            f"{type(e).__name__}: {e}\n\n{''.join(tb)}", code, start
+        )
 
     # Extract and validate results
     raw = namespace.get("results", {})
