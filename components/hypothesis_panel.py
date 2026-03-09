@@ -133,7 +133,7 @@ def _render_next_steps(query: ProteinQuery, trust_audit: TrustAudit):
         st.link_button(
             "Open BioRender",
             "https://biorender.com",
-            use_container_width=True,
+            width="stretch",
         )
 
     with cols[2]:
@@ -182,5 +182,5 @@ def _render_tamarind_next_steps(query: ProteinQuery):
             st.link_button(
                 f"Open {tool}",
                 url,
-                use_container_width=True,
+                width="stretch",
             )

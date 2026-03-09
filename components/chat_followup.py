@@ -724,7 +724,7 @@ def _render_standalone_chat():
             if cols[i % 2].button(
                 suggestion[:50] + ("..." if len(suggestion) > 50 else ""),
                 key=f"standalone_suggest_{i}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state["chat_messages"].append(
                     {"role": "user", "content": suggestion}

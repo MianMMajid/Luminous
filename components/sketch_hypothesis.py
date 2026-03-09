@@ -102,7 +102,7 @@ def render_sketch_hypothesis():
         if uploaded:
             image_bytes = uploaded.read()
             st.session_state["sketch_image_bytes"] = image_bytes
-            st.image(image_bytes, caption="Uploaded sketch", use_container_width=True)
+            st.image(image_bytes, caption="Uploaded sketch", width="stretch")
 
     # Use the most recent image source
     if image_bytes is None:
@@ -226,7 +226,7 @@ def _render_structured_output(interpretation: dict, query: ProteinQuery | None):
     interactions = interpretation.get("interactions", [])
     if elements and interactions:
         fig = _build_network_figure(elements, interactions)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     prediction = interpretation.get("testable_prediction", "")
     if prediction:
@@ -245,7 +245,7 @@ def _render_structured_output(interpretation: dict, query: ProteinQuery | None):
             json.dumps(interpretation, indent=2),
             "sketch_interpretation.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
     with col2:
         if mermaid:
@@ -254,14 +254,14 @@ def _render_structured_output(interpretation: dict, query: ProteinQuery | None):
                 mermaid,
                 "sketch_diagram.mmd",
                 mime="text/plain",
-                use_container_width=True,
+                width="stretch",
             )
     with col3:
         if elements:
             svg = _elements_to_simple_svg(elements, interactions)
             st.download_button(
                 "Download SVG", svg, "sketch_diagram.svg", mime="image/svg+xml",
-                use_container_width=True,
+                width="stretch",
             )
     st.markdown('</div>', unsafe_allow_html=True)
 

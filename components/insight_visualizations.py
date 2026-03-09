@@ -141,7 +141,7 @@ def _render_risk_radar(
         margin=dict(t=30, b=30, l=60, r=60),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Quick interpretation
     high_dims = [c.replace("\n", " ") for c, v in zip(categories, values) if v >= 70]
@@ -231,7 +231,7 @@ def _render_disease_score_distribution(bio_context: BioContext):
         yaxis=dict(autorange="reversed"),
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Data provenance
     st.markdown(
@@ -354,7 +354,7 @@ def _render_confidence_pathogenicity_correlation(
         showlegend=False,
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # --- Real-time recalculated stats based on threshold ---
     at_risk = [p for p in path_confidences if p < confidence_threshold]

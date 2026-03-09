@@ -364,7 +364,7 @@ def _render_electrostatics_results(data: dict, query: ProteinQuery):
 
     # ── 2. Strip chart ──────────────────────────────────
     fig = _build_strip_chart(residue_ids, potentials, query)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # ── 3. Charged patches ──────────────────────────────
     if patches:

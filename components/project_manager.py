@@ -46,7 +46,7 @@ def _render_save_button():
     )
     if st.button(
         "Save Project",
-        use_container_width=True,
+        width="stretch",
         disabled=not has_data,
         key="save_project_btn",
     ):
@@ -72,7 +72,7 @@ def _render_save_button():
             safe_json_dumps(data, indent=2),
             filename,
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
             key="download_project_btn",
         )
 
@@ -130,7 +130,7 @@ def _render_recent_projects():
                     unsafe_allow_html=True,
                 )
             with col_load:
-                if st.button("Load Project", key=f"load_recent_{pf.name}", use_container_width=True):
+                if st.button("Load Project", key=f"load_recent_{pf.name}", width="stretch"):
                     try:
                         data = safe_json_loads(pf.read_text())
                         _deserialize_session(data)

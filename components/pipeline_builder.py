@@ -308,7 +308,7 @@ def _render_pipeline_templates(
                     btn_label,
                     key=f"pipeline_run_{tpl_key}",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     _execute_pipeline(query, prediction, tpl, remaining_tools)
 
@@ -491,7 +491,7 @@ def _render_recommendation_cards(
                     if st.button(
                         f"Run {display_name}",
                         key=f"rec_run_{tool_key}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         _execute_single_tool(tool_key, display_name, query, prediction)
                 else:

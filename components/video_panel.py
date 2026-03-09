@@ -69,7 +69,7 @@ def render_video_panel():
         )
         if uploaded:
             image_bytes = uploaded.getvalue()
-            st.image(image_bytes, caption="Input screenshot", use_container_width=True)
+            st.image(image_bytes, caption="Input screenshot", width="stretch")
 
     # Style selection
     style_col, prompt_col = st.columns([1, 2])
@@ -102,7 +102,7 @@ def render_video_panel():
         "Generate Video",
         type="primary",
         disabled=not can_generate,
-        use_container_width=True,
+        width="stretch",
         key="btn_generate_video",
     ):
         prompt = custom_prompt.strip() if custom_prompt.strip() else None
@@ -139,7 +139,7 @@ def render_video_panel():
             data=video_bytes,
             file_name=filename,
             mime="video/mp4",
-            use_container_width=True,
+            width="stretch",
             key="dl_video",
         )
 

@@ -76,7 +76,7 @@ def render_report_export():
                 prediction.pdb_content,
                 f"{query.protein_name}_prediction.pdb",
                 mime="chemical/x-pdb",
-                use_container_width=True,
+                width="stretch",
                 type="primary",
             )
 
@@ -99,7 +99,7 @@ def render_report_export():
             fig = _build_confidence_chart(
                 prediction.residue_ids, prediction.plddt_per_residue
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("No per-residue confidence data available.")
 
@@ -108,17 +108,17 @@ def render_report_export():
         if trust_audit and trust_audit.regions:
             st.markdown("#### Region Confidence Summary")
             fig_regions = _build_region_chart(trust_audit)
-            st.plotly_chart(fig_regions, use_container_width=True)
+            st.plotly_chart(fig_regions, width="stretch")
         elif bio_context and bio_context.drugs:
             st.markdown("#### Drug Pipeline")
             fig_drugs = _build_drug_chart(bio_context)
-            st.plotly_chart(fig_drugs, use_container_width=True)
+            st.plotly_chart(fig_drugs, width="stretch")
 
     # Drug pipeline (if region chart already shown and drugs exist)
     if trust_audit and trust_audit.regions and bio_context and bio_context.drugs:
         st.markdown("#### Drug Pipeline")
         fig_drugs = _build_drug_chart(bio_context)
-        st.plotly_chart(fig_drugs, use_container_width=True)
+        st.plotly_chart(fig_drugs, width="stretch")
 
     st.divider()
 
@@ -145,7 +145,7 @@ def render_report_export():
             safe_json_dumps(report, indent=2),
             f"{query.protein_name}_report.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
 
     with col2:
@@ -156,7 +156,7 @@ def render_report_export():
                 csv,
                 f"{query.protein_name}_confidence.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
             )
 
     with col3:
@@ -168,7 +168,7 @@ def render_report_export():
             md_report,
             f"{query.protein_name}_report.md",
             mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── Figure Studio & Advanced Exports ──
@@ -239,7 +239,7 @@ def _render_pdf_download(
         if st.button(
             "Generate PDF Report",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key=f"gen_pdf{key_suffix}",
         ):
             with st.spinner("Generating PDF..."):
@@ -285,7 +285,7 @@ def _render_pdf_download(
                 pdf_bytes,
                 f"Luminous_{query.protein_name}{mut_str}_report.pdf",
                 mime="application/pdf",
-                use_container_width=True,
+                width="stretch",
                 key=f"dl_pdf{key_suffix}",
             )
             size_kb = len(pdf_bytes) / 1024
@@ -383,7 +383,7 @@ def _render_pdf_viewer(
                 data=video_bytes,
                 file_name="protein_animation.mp4",
                 mime="video/mp4",
-                use_container_width=True,
+                width="stretch",
                 key=f"dl_video_viewer{key_suffix}",
             )
 
@@ -750,7 +750,7 @@ def _render_data_driven_figures(
                 generate = st.button(
                     f"Generate {label}",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     key=f"gen_{suffix}_btn",
                 )
 
@@ -895,7 +895,7 @@ def _render_code_execution_figures(
                 generate = st.button(
                     f"Generate {label}",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     key=f"cex_gen_{fig_type}",
                 )
 
@@ -910,7 +910,7 @@ def _render_code_execution_figures(
                 st.image(
                     result["image_bytes"],
                     caption=f"{label} — {protein}{' ' + query.mutation if query.mutation else ''}",
-                    use_container_width=True,
+                    width="stretch",
                 )
 
                 # Download button
@@ -1260,7 +1260,7 @@ def _render_experiment_tracker(
             label_visibility="collapsed",
         )
     with col_btn:
-        if st.button("Add Experiment", key="add_experiment_btn", use_container_width=True):
+        if st.button("Add Experiment", key="add_experiment_btn", width="stretch"):
             if new_exp and new_exp.strip():
                 if st.session_state.get("experiment_tracker") is None:
                     st.session_state["experiment_tracker"] = {}
@@ -1301,7 +1301,7 @@ def _render_html_export(
         if st.button(
             "Generate HTML Report",
             type="secondary",
-            use_container_width=True,
+            width="stretch",
             key="gen_html",
         ):
             with st.status("Building HTML report..."):
@@ -1319,7 +1319,7 @@ def _render_html_export(
                 html_content,
                 f"Luminous_{query.protein_name}{mut_str}_report.html",
                 mime="text/html",
-                use_container_width=True,
+                width="stretch",
                 key="dl_html",
             )
             size_kb = len(html_content) / 1024
@@ -1614,7 +1614,7 @@ def _render_figure_kit_section(
         if st.button(
             "Generate Figure Kit",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key="gen_figure_kit",
         ):
             with st.status("Assembling figure kit..."):
@@ -1635,7 +1635,7 @@ def _render_figure_kit_section(
                 kit_bytes,
                 f"Luminous_{query.protein_name}{mut_str}_figures.zip",
                 mime="application/zip",
-                use_container_width=True,
+                width="stretch",
                 key="dl_figure_kit",
             )
             size_kb = len(kit_bytes) / 1024
@@ -1893,7 +1893,7 @@ def _render_panel_composer(
                     )
                     st.plotly_chart(
                         fig,
-                        use_container_width=True,
+                        width="stretch",
                         key=f"panel_preview_{label}",
                     )
 
@@ -1901,7 +1901,7 @@ def _render_panel_composer(
         if st.button(
             "Export Multi-Panel Figure",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key="export_panel",
         ):
             with st.status("Generating multi-panel figure..."):
@@ -1926,7 +1926,7 @@ def _render_panel_composer(
                 content,
                 f"Luminous_{query.protein_name}{mut_str}_panels.{ext}",
                 mime=mime,
-                use_container_width=True,
+                width="stretch",
                 key="dl_panel_figure",
             )
 
@@ -2121,7 +2121,7 @@ def _render_graphical_abstract(
     if st.button(
         "Generate Graphical Abstract",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         key="gen_graphical_abstract",
     ):
         if not finding.strip():
@@ -2148,7 +2148,7 @@ def _render_graphical_abstract(
             svg_data,
             f"Luminous_{query.protein_name}{mut_str}_graphical_abstract.svg",
             mime="image/svg+xml",
-            use_container_width=True,
+            width="stretch",
             key="dl_graphical_abstract",
         )
 

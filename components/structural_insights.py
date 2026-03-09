@@ -369,7 +369,7 @@ def _render_sasa_profile(analysis: dict, query: ProteinQuery, mutation_pos: int 
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_confidence_distribution(prediction: PredictionResult):
@@ -415,7 +415,7 @@ def _render_confidence_distribution(prediction: PredictionResult):
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Interpretation
     very_low_frac = sum(1 for s in scores if s < 50) / len(scores)
@@ -504,7 +504,7 @@ def _render_3d_distance_analysis(analysis: dict, query: ProteinQuery):
             xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
             yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # Highlight hidden spatial clusters
         close_in_3d = [v for v in var_dists if v["distance_3d"] < 10]
@@ -608,7 +608,7 @@ def _render_3d_clustering(analysis: dict):
         margin=dict(t=10, b=80, l=120, r=20),
         xaxis=dict(tickangle=-30),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Hidden clusters callout
     if hidden:
@@ -757,7 +757,7 @@ def _render_multi_track_map(
     for row in range(1, n_tracks):
         fig.update_xaxes(title_text="", row=row, col=1)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Legend
     st.markdown(
@@ -859,7 +859,7 @@ def _render_contact_map(
         yaxis=dict(title="Residue", autorange="reversed",
                    nticks=min(20, len(sub_res))),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ─── NEW: Packing Density ──────────────────────────────────────────
@@ -930,7 +930,7 @@ def _render_packing_density(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Interpretation
     if mutation_pos and mutation_pos in packing:
@@ -1030,7 +1030,7 @@ def _render_ramachandran(
         height=380,
         margin=dict(t=10, b=40, l=50, r=20),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Quality stats
     if stats:
@@ -1121,7 +1121,7 @@ def _render_network_centrality(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Interpretation
     n_edges = analysis.get("network_edges", 0)
@@ -1329,7 +1329,7 @@ def _render_conservation_depth_scatter(
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Summary insight
     # Count residues in the "danger zone" (conserved ≥7 AND deep ≥ 60% of max)
@@ -1494,7 +1494,7 @@ def _render_communication_path(
         showlegend=False,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Interpretation
     ratio = best_path["path_to_direct_ratio"]
@@ -1692,7 +1692,7 @@ def _render_hydrophobic_patches(
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Insights
     for idx, patch in enumerate(patches[:3]):

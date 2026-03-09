@@ -178,7 +178,7 @@ def render_residue_dashboard(
     )
 
     selection = st.plotly_chart(
-        fig, use_container_width=True, key="residue_dashboard_chart",
+        fig, width="stretch", key="residue_dashboard_chart",
         on_select="rerun",
     )
 

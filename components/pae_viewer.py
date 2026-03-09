@@ -77,7 +77,7 @@ def render_pae_viewer(confidence_data: dict, query: ProteinQuery):
 
     # Build the figure (cached on the matrix hash)
     fig = _build_pae_figure(pae_matrix, domains, mut_pos)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Domain summary
     if domains and len(domains) == 1:

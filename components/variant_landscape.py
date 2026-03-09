@@ -385,7 +385,7 @@ def _render_variant_severity_scatter(variant_data: dict):
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
     selection = st.plotly_chart(
-        fig, use_container_width=True, key="variant_severity_scatter",
+        fig, width="stretch", key="variant_severity_scatter",
         on_select="rerun",
     )
 
@@ -559,7 +559,7 @@ def _render_variant_structure_chart(
         xaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
         yaxis=dict(gridcolor="rgba(0,0,0,0.08)"),
     )
-    st.plotly_chart(fig, use_container_width=True, key="variant_structure_chart")
+    st.plotly_chart(fig, width="stretch", key="variant_structure_chart")
 
     # Dynamic summary
     if path_x:
@@ -858,7 +858,7 @@ def _render_lollipop_plot(
                 showlegend=True,
             ))
 
-    st.plotly_chart(fig, use_container_width=True, key="variant_lollipop_chart")
+    st.plotly_chart(fig, width="stretch", key="variant_lollipop_chart")
 
     # Hotspot detection & interpretation
     pathogenic_pos = [p for p, c in zip(positions, colors) if c == "#FF3B30"]

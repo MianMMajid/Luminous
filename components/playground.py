@@ -316,7 +316,7 @@ def _render_insight_card(item: dict, display_key: int, *, actual_idx: int | None
         try:
             fig = go.Figure(json.loads(item["chart_json"]))
             fig.update_layout(height=250, margin=dict(t=10, b=30, l=40, r=10))
-            st.plotly_chart(fig, use_container_width=True, key=f"pinned_chart_{display_key}")
+            st.plotly_chart(fig, width="stretch", key=f"pinned_chart_{display_key}")
         except Exception:
             pass
 
@@ -484,7 +484,7 @@ def _render_overlay_view(pinned: list[dict]):
         font=dict(family="Nunito, system-ui, sans-serif"),
     )
 
-    st.plotly_chart(fig, use_container_width=True, key="overlay_chart")
+    st.plotly_chart(fig, width="stretch", key="overlay_chart")
 
 
 # ── Inspire Me ──
