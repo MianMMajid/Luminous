@@ -186,37 +186,14 @@ except Exception:
 
 
 # --- Session State Initialization ---
-DEFAULTS = {
-    "query_input": "",
-    "query_parsed": False,
-    "parsed_query": None,
-    "raw_query": "",
-    "prediction_result": None,
-    "trust_audit": None,
-    "bio_context": None,
-    "interpretation": None,
-    "active_tab": "Lumi",
-    "pipeline_running": False,
-    "chat_messages": [],
-    "tamarind_results": {},
-    "playground_pinned": [],
-    "playground_plan": None,
-    "stats_data": None,
-    "stats_results": None,
-    "stats_survival_data": None,
-    "_chat_thinking": False,
-    "_interpretation_attempted": False,
-    "experiment_tracker": {},
-    "generated_hypotheses": None,
-    "playground_inspiration": None,
-    "structure_analysis": None,
-}
-for key, val in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
+from src.services import AnalysisSessionService
+
+AnalysisSessionService.ensure_defaults(st.session_state)
 
 # --- API Key Validation (show once per session) ---
 if not st.session_state.get("_api_warning_shown"):
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv()
     import os as _os
     _missing = []
     if not _os.getenv("ANTHROPIC_API_KEY"):
@@ -233,46 +210,7 @@ if not st.session_state.get("_api_warning_shown"):
 
 def reset_results():
     """Clear all downstream results when a new query is submitted."""
-    # Cancel any running background tasks
-    try:
-        from src.task_manager import task_manager
-        task_manager.clear()
-    except Exception:
-        pass
-
-    for key in [
-        "prediction_result", "trust_audit", "bio_context",
-        "interpretation", "stats_data", "stats_results",
-        "stats_survival_data", "structure_analysis",
-        "generated_hypotheses", "panel_figure_data",
-        "graphical_abstract_svg", "figure_checklist_state",
-        "experiment_tracker", "sketch_image_bytes",
-        "sketch_interpretation", "comparison_data",
-        "playground_inspiration", "playground_pinned",
-        "playground_plan", "esmfold_pdb",
-        "docked_complex_pdb", "generated_video",
-        "_interpretation_attempted", "_prediction_raw",
-    ]:
-        st.session_state[key] = None
-    st.session_state["chat_messages"] = []
-    st.session_state["playground_pinned"] = []
-    st.session_state["_chat_thinking"] = False
-    st.session_state["_interpretation_attempted"] = False
-    # Clear dynamic caches keyed by protein name or uniprot ID
-    _dynamic_prefixes = (
-        "variant_data_", "alphamissense_", "domains_",
-        "flexibility_", "pockets_", "struct_analysis_",
-        "alphafold_", "biorender_results_", "tamarind_results_",
-        "svg_diagram_", "svg_", "_dashboard_",
-        "_variant_fetch_attempted_", "variant_enrichment_",
-        "pdf_bytes_", "nma_traj_", "morph_traj_",
-        "charge_", "struct_diff_", "electrostatics_data_",
-        "html_report_", "figure_kit_", "cex_",
-        "rcsb_pdb_id_", "biorender_prompt_",
-    )
-    for k in list(st.session_state.keys()):
-        if k.startswith(_dynamic_prefixes):
-            del st.session_state[k]
+    AnalysisSessionService.reset_analysis(st.session_state)
 
 
 # --- DNA Character SVG (shared between welcome + compact header) ---
@@ -384,67 +322,41 @@ tab_chat, tab_query, tab_structure, tab_context, tab_report, tab_stats, tab_play
     default=_saved_tab if _saved_tab in _TAB_LABELS else None,
 )
 
-# ── Fragment-wrapped tab renderers ──────────────────────────────────────────
-# @st.fragment() makes each tab an independent re-run scope: a widget change
-# inside one tab only re-executes THAT tab's fragment, not the entire app.
-# This eliminates the eager fan-out where every rerun recomputes all 8 tabs.
+# ── Tab renderers ─────────────────────────────────────────────────────────
+# All tabs render on every app rerun so session state changes (e.g. after
+# Analyze) are immediately visible across Structure, Biology, Report, etc.
 
-@st.fragment()
-def _frag_query():
+with tab_query:
     from components.query_input import render_query_input
     render_query_input()
 
-@st.fragment()
-def _frag_structure():
+with tab_structure:
     from components.structure_viewer import render_structure_viewer
     render_structure_viewer()
 
-@st.fragment()
-def _frag_context():
+with tab_context:
     from components.context_panel import render_context_panel
     render_context_panel()
 
-@st.fragment()
-def _frag_report():
+with tab_report:
     from components.report_export import render_report_export
     render_report_export()
 
-@st.fragment()
-def _frag_stats():
+with tab_stats:
     from components.statistics_tab import render_statistics
     render_statistics()
 
-@st.fragment()
-def _frag_playground():
+with tab_playground:
     from components.playground import render_playground
     render_playground()
 
-@st.fragment()
-def _frag_sketch():
+with tab_sketch:
     from components.sketch_hypothesis import render_sketch_hypothesis
     render_sketch_hypothesis()
 
-@st.fragment()
-def _frag_chat():
+with tab_chat:
     from components.chat_followup import render_chat_followup
     render_chat_followup()
-
-with tab_query:
-    _frag_query()
-with tab_structure:
-    _frag_structure()
-with tab_context:
-    _frag_context()
-with tab_report:
-    _frag_report()
-with tab_stats:
-    _frag_stats()
-with tab_playground:
-    _frag_playground()
-with tab_sketch:
-    _frag_sketch()
-with tab_chat:
-    _frag_chat()
 
 def _is_modal_ready() -> bool:
     """Check if Modal is installed and has credentials."""

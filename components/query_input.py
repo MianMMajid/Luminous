@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.models import ProteinQuery
 from src.query_parser import parse_query
+from src.services import AnalysisSessionService
 
 # Widget key for the text area
 _TEXT_KEY = "query_text_area"
@@ -127,51 +128,8 @@ def render_query_input():
 
 def _do_parse(text: str, example_data: dict | None = None):
     """Parse the query and store results in session state."""
-    # Keep user on the Search tab after rerun
     st.session_state["active_tab"] = "Search"
-
-    # Cancel any running background tasks
-    try:
-        from src.task_manager import task_manager
-        task_manager.clear()
-    except Exception:
-        pass
-
-    # Clear the parsed query up-front so a failed parse never leaves
-    # the old protein active while downstream state is already wiped.
-    st.session_state["parsed_query"] = None
-    st.session_state["query_parsed"] = False
-
-    # Reset downstream results
-    for key in ["prediction_result", "trust_audit", "bio_context", "interpretation",
-                "generated_hypotheses", "stats_data", "stats_results",
-                "stats_survival_data", "structure_analysis",
-                "panel_figure_data", "graphical_abstract_svg",
-                "figure_checklist_state", "experiment_tracker",
-                "sketch_image_bytes", "sketch_interpretation",
-                "comparison_data", "playground_inspiration",
-                "playground_pinned", "playground_plan",
-                "esmfold_pdb", "docked_complex_pdb", "generated_video",
-                "_interpretation_attempted", "_prediction_raw"]:
-        st.session_state[key] = None
-    st.session_state["chat_messages"] = []
-    st.session_state["playground_pinned"] = []
-    st.session_state["_chat_thinking"] = False
-    # Clear dynamic caches keyed by protein name or uniprot ID
-    for k in list(st.session_state.keys()):
-        if k.startswith((
-            "variant_data_", "alphamissense_", "domains_",
-            "flexibility_", "pockets_", "struct_analysis_",
-            "alphafold_", "biorender_results_",
-            "tamarind_results_", "svg_diagram_", "svg_",
-            "_dashboard_",
-            "_variant_fetch_attempted_", "variant_enrichment_",
-            "pdf_bytes_", "nma_traj_", "morph_traj_",
-            "charge_", "struct_diff_", "electrostatics_data_",
-            "html_report_", "figure_kit_", "cex_",
-            "rcsb_pdb_id_", "biorender_prompt_",
-        )):
-            del st.session_state[k]
+    AnalysisSessionService.reset_analysis(st.session_state, clear_query=True)
 
     try:
         if example_data and example_data.get("query") == text:
@@ -186,9 +144,9 @@ def _do_parse(text: str, example_data: dict | None = None):
         else:
             parsed = parse_query(text)
 
-        st.session_state["parsed_query"] = parsed
-        st.session_state["raw_query"] = text
-        st.session_state["query_parsed"] = True
+        AnalysisSessionService.set_query(st.session_state, parsed, text)
+        # Force full app rerun so the other tabs pick up the new state
+        st.rerun()
     except Exception as e:
         st.error(
             f"Could not parse your query. Try a format like: "
