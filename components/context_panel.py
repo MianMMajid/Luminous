@@ -3,6 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.models import BioContext, ProteinQuery, TrustAudit
+from src.services import ContextService
 
 
 def render_context_panel():
@@ -58,23 +59,8 @@ def render_context_panel():
     # Auto-generate interpretation in background if context exists but interpretation doesn't
     if interpretation is None and trust_audit is not None and not st.session_state.get("_interpretation_attempted"):
         st.session_state["_interpretation_attempted"] = True
-        from src.background_tasks import generate_interpretation_background
-        from src.task_manager import task_manager
-
-        task_manager.submit(
-            task_id="interpretation",
-            fn=generate_interpretation_background,
-            kwargs={
-                "protein_name": query.protein_name,
-                "uniprot_id": query.uniprot_id,
-                "mutation": query.mutation,
-                "question_type": query.question_type,
-                "interaction_partner": query.interaction_partner,
-                "sequence": query.sequence,
-                "trust_audit_dict": trust_audit,
-                "bio_context_obj": bio_context,
-            },
-            label="AI interpretation",
+        ContextService.submit_background_interpretation(
+            query, trust_audit, bio_context
         )
 
     # --- Display results ---
@@ -354,19 +340,14 @@ def _fetch_and_interpret(query: ProteinQuery, trust_audit: TrustAudit | None):
         if trust_audit:
             st.write("Generating AI interpretation...")
             try:
-                from src.interpreter import generate_interpretation
-
-                interpretation = generate_interpretation(
+                interpretation = ContextService.generate_interpretation_sync(
                     query, trust_audit, bio_context
                 )
                 st.session_state["interpretation"] = interpretation
                 st.write("Interpretation ready.")
             except Exception as e:
                 st.write(f"Interpretation generation failed: {e}")
-                # Generate fallback interpretation
-                from src.interpreter import _fallback_interpretation
-
-                st.session_state["interpretation"] = _fallback_interpretation(
+                st.session_state["interpretation"] = ContextService.generate_interpretation_sync(
                     query, trust_audit, bio_context
                 )
         else:
@@ -379,47 +360,15 @@ def _fetch_and_interpret(query: ProteinQuery, trust_audit: TrustAudit | None):
 
 def _fetch_context(query: ProteinQuery, status) -> BioContext:
     """Try MCP connector, then BioMCP CLI, then empty context."""
-    # Path A: Anthropic MCP connector
     st.write("Querying PubMed, Open Targets, Wiley via Claude MCP...")
-    try:
-        from src.bio_context import fetch_bio_context_mcp
-
-        ctx = fetch_bio_context_mcp(query)
-        if ctx.narrative or ctx.disease_associations or ctx.drugs:
-            st.write("MCP context retrieved.")
-            return ctx
-        st.write("MCP returned empty results, trying BioMCP...")
-    except Exception as e:
-        st.write(f"MCP failed: {e}. Trying BioMCP CLI...")
-
-    # Path B: BioMCP direct
-    try:
-        from src.bio_context_direct import fetch_bio_context_direct
-
-        ctx = fetch_bio_context_direct(query)
-        st.write("BioMCP context retrieved.")
+    ctx = ContextService.fetch_context_sync(query)
+    if ctx.narrative or ctx.disease_associations or ctx.drugs:
+        st.write("Biological context retrieved.")
         return ctx
-    except Exception as e:
-        st.write(f"BioMCP also failed: {e}. Using minimal context.")
-
-    return BioContext()
+    st.write("Context providers returned minimal data.")
+    return ctx
 
 
 def _submit_context_background(query: ProteinQuery, trust_audit: TrustAudit | None):
     """Submit bio context fetch + interpretation as background tasks."""
-    from src.background_tasks import fetch_bio_context_background
-    from src.task_manager import task_manager
-
-    task_manager.submit(
-        task_id="bio_context",
-        fn=fetch_bio_context_background,
-        kwargs={
-            "protein_name": query.protein_name,
-            "uniprot_id": query.uniprot_id,
-            "mutation": query.mutation,
-            "question_type": query.question_type,
-            "interaction_partner": query.interaction_partner,
-            "sequence": query.sequence,
-        },
-        label="Biological context (PubMed, Open Targets, ChEMBL)",
-    )
+    ContextService.submit_background_context(query)

@@ -204,31 +204,18 @@ def _apply_task_result(task):
 
 def _apply_prediction_result(result: dict):
     """Parse PDB content and store as PredictionResult in session state."""
-    from src.models import PredictionResult
-    from src.utils import parse_pdb_plddt
+    from src.services import AnalysisSessionService
 
     pdb_content = result.get("pdb", "")
     confidence = result.get("confidence", {})
     affinity = result.get("affinity")
     source = result.get("source", "unknown")
     skip_plddt = result.get("skip_plddt", False)
-
-    chain_ids, residue_ids, plddt_scores = [], [], []
-    if pdb_content:
-        try:
-            chain_ids, residue_ids, plddt_scores = parse_pdb_plddt(pdb_content)
-        except Exception:
-            pass
-
-    if skip_plddt:
-        plddt_scores = []
-
-    st.session_state["prediction_result"] = PredictionResult(
+    AnalysisSessionService.store_prediction(
+        st.session_state,
         pdb_content=pdb_content,
-        confidence_json=confidence,
-        affinity_json=affinity,
-        plddt_per_residue=plddt_scores,
-        chain_ids=chain_ids,
-        residue_ids=residue_ids,
-        compute_source=source,
+        confidence=confidence,
+        affinity=affinity,
+        source=source,
+        skip_plddt=skip_plddt,
     )

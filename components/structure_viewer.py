@@ -7,12 +7,11 @@ import streamlit as st
 mvs = None  # lazy-loaded in render_structure_viewer() to avoid ~0.5s startup cost
 
 from src.models import PredictionResult, ProteinQuery, TrustAudit
-from src.trust_auditor import build_trust_audit, get_residue_flags
+from src.services import AnalysisSessionService, PredictionService
+from src.trust_auditor import get_residue_flags
 from src.utils import (
     build_trust_annotations,
     confidence_emoji,
-    load_precomputed,
-    parse_pdb_plddt,
     run_async,
 )
 
@@ -54,16 +53,11 @@ def render_structure_viewer():
     # Build trust audit if not done
     if st.session_state.get("trust_audit") is None:
         try:
-            trust_audit = build_trust_audit(
+            trust_audit = AnalysisSessionService.ensure_trust_audit(
+                st.session_state,
                 query,
-                prediction.pdb_content,
-                prediction.confidence_json,
-                chain_ids=prediction.chain_ids if prediction.chain_ids else None,
-                residue_ids=prediction.residue_ids if prediction.residue_ids else None,
-                plddt_scores=prediction.plddt_per_residue if prediction.plddt_per_residue else None,
-                is_experimental=(prediction.compute_source == "rcsb"),
+                prediction,
             )
-            st.session_state["trust_audit"] = trust_audit
         except Exception as e:
             st.error(
                 f"Trust audit could not be completed: {e}\n\n"
@@ -318,122 +312,33 @@ def _run_prediction(query: ProteinQuery):
 
     Fallback chain: precomputed → Tamarind API → Modal H100 → RCSB PDB
     """
-    # Check user-selected compute backend
     backend = st.session_state.get("compute_backend", "auto")
 
-    # Try precomputed first (demo resilience) — unless user forced a backend
-    if backend == "auto":
-        example_map = {
-            "TP53": "p53_r248w",
-            "BRCA1": "brca1_c61g",
-            "EGFR": "egfr_t790m",
-            "INS": "insulin",
-            "SPIKE": "spike_rbd",
-            "HBA1": "hba1_hemoglobin",
-        }
-        example_name = example_map.get(query.protein_name.upper())
-        if example_name:
-            precomputed = load_precomputed(example_name)
-            if precomputed and precomputed.get("pdb"):
-                confidence = dict(precomputed.get("confidence", {}))
-                plddt_override = confidence.pop("plddt_per_residue", None)
-                chain_override = confidence.pop("chain_ids", None)
-                resid_override = confidence.pop("residue_ids", None)
+    dispatch = PredictionService.run_prediction(
+        query,
+        st.session_state,
+        backend=backend,
+        num_recycles=st.session_state.get("boltz_recycling_steps", 3),
+        use_msa=st.session_state.get("boltz_use_msa", True),
+        predict_affinity=st.session_state.get("boltz_predict_affinity", True),
+    )
 
-                affinity_data = precomputed.get("affinity")
-                if plddt_override and chain_override and resid_override:
-                    st.session_state["prediction_result"] = PredictionResult(
-                        pdb_content=precomputed["pdb"],
-                        confidence_json=confidence,
-                        affinity_json=affinity_data,
-                        plddt_per_residue=plddt_override,
-                        chain_ids=chain_override,
-                        residue_ids=resid_override,
-                        compute_source="precomputed",
-                    )
-                else:
-                    _store_prediction(
-                        precomputed["pdb"], confidence, affinity_data,
-                        source="precomputed",
-                    )
-
-                if precomputed.get("context") and st.session_state.get("bio_context") is None:
-                    _load_precomputed_context(precomputed["context"])
-
-                if precomputed.get("variants"):
-                    var_key = f"variant_data_{query.protein_name}"
-                    if st.session_state.get(var_key) is None:
-                        st.session_state[var_key] = precomputed["variants"]
-
-                # Load precomputed structure analysis, flexibility, pockets
-                if precomputed.get("structure_analysis"):
-                    cache_key = f"struct_analysis_{query.protein_name}_{query.mutation}"
-                    if st.session_state.get(cache_key) is None:
-                        st.session_state[cache_key] = precomputed["structure_analysis"]
-                    if not st.session_state.get("structure_analysis"):
-                        st.session_state["structure_analysis"] = precomputed["structure_analysis"]
-
-                if precomputed.get("flexibility"):
-                    flex_key = f"flexibility_{query.protein_name}"
-                    if st.session_state.get(flex_key) is None:
-                        st.session_state[flex_key] = precomputed["flexibility"]
-
-                if precomputed.get("pockets"):
-                    pocket_key = f"pockets_{query.protein_name}"
-                    if st.session_state.get(pocket_key) is None:
-                        st.session_state[pocket_key] = precomputed["pockets"]
-
-                if precomputed.get("interpretation"):
-                    if st.session_state.get("interpretation") is None:
-                        interp_data = precomputed["interpretation"]
-                        st.session_state["interpretation"] = interp_data.get("text", "")
-
-                st.caption(f"Loaded Boltz-2 prediction for {query.protein_name}")
-                return
-
-    # Live compute — use background tasks for non-blocking predictions
-    from src.task_manager import task_manager
-
-    # Check if a prediction task is already running
-    pred_status = task_manager.status("prediction")
-    if pred_status and pred_status.value == "running":
-        st.info(
-            "Structure prediction is running in the background. "
-            "You can explore other tabs while waiting — Lumi will notify you when it's done."
-        )
+    if dispatch.status == "loaded":
+        st.caption(dispatch.message)
+        return
+    if dispatch.status == "running":
+        st.info(dispatch.message)
         _render_prediction_progress()
         return
-
-    if query.sequence:
-        if _submit_prediction_background(query, backend):
-            st.info(
-                "Structure prediction submitted! "
-                "You can switch to other tabs — Lumi will notify you when it's ready."
-            )
-            _render_prediction_progress()
-            return
-
-    # RCSB PDB fallback — submit to background to avoid blocking
-    if backend in ("auto", "rcsb") and query.uniprot_id:
-        from src.task_manager import task_manager
-        pred_status_rcsb = task_manager.status("prediction")
-        if not pred_status_rcsb or pred_status_rcsb.value not in ("pending", "running"):
-            task_manager.submit(
-                task_id="prediction",
-                fn=_fetch_rcsb_background,
-                args=(query.uniprot_id,),
-                label=f"Fetching {query.uniprot_id} from RCSB PDB",
-            )
-        st.info(
-            "Fetching experimental structure from RCSB PDB in the background. "
-            "Feel free to explore other tabs."
-        )
+    if dispatch.status == "submitted":
+        if dispatch.skipped_backends:
+            st.caption(f"Skipped backends: {', '.join(dispatch.skipped_backends)}")
+        st.info(dispatch.message)
+        _render_prediction_progress()
         return
-
-    st.warning(
-        "No sequence or precomputed data available. "
-        "Select an example or provide a protein sequence."
-    )
+    if dispatch.skipped_backends:
+        st.caption(f"Skipped backends: {', '.join(dispatch.skipped_backends)}")
+    st.warning(dispatch.message)
 
 
 def _submit_prediction_background(query: ProteinQuery, backend: str) -> bool:
@@ -574,40 +479,7 @@ def _run_modal(query: ProteinQuery) -> bool:
 
 def _load_precomputed_context(context_data: dict):
     """Load precomputed biological context into session state."""
-    from src.models import BioContext, DiseaseAssociation, DrugCandidate, LiteratureSummary
-
-    try:
-        disease_assocs = []
-        for d in context_data.get("disease_associations", []):
-            try:
-                disease_assocs.append(DiseaseAssociation(**d))
-            except Exception:
-                pass
-
-        drugs = []
-        for d in context_data.get("drugs", []):
-            try:
-                drugs.append(DrugCandidate(**d))
-            except Exception:
-                pass
-
-        try:
-            literature = LiteratureSummary(**context_data.get("literature", {}))
-        except Exception:
-            literature = LiteratureSummary()
-
-        st.session_state["bio_context"] = BioContext(
-            narrative=context_data.get("narrative", ""),
-            disease_associations=disease_assocs,
-            drugs=drugs,
-            literature=literature,
-            pathways=context_data.get("pathways", []),
-            suggested_experiments=context_data.get("suggested_experiments", []),
-        )
-    except Exception:
-        st.session_state["bio_context"] = BioContext(
-            narrative=context_data.get("narrative", "Precomputed context (partial load)."),
-        )
+    AnalysisSessionService.store_bio_context(st.session_state, context_data)
 
 
 def _fetch_rcsb_background(uniprot_id: str) -> dict:
@@ -671,25 +543,13 @@ def _store_prediction(
     Set skip_plddt=True for experimental structures (RCSB) where B-factors
     are crystallographic, not pLDDT confidence scores.
     """
-    chain_ids, residue_ids, plddt_scores = [], [], []
-    if pdb_content:
-        try:
-            chain_ids, residue_ids, plddt_scores = parse_pdb_plddt(pdb_content)
-        except Exception:
-            pass
-
-    # For RCSB structures, B-factors are NOT pLDDT — don't use them
-    if skip_plddt:
-        plddt_scores = []
-
-    st.session_state["prediction_result"] = PredictionResult(
+    AnalysisSessionService.store_prediction(
+        st.session_state,
         pdb_content=pdb_content,
-        confidence_json=confidence,
-        affinity_json=affinity,
-        plddt_per_residue=plddt_scores,
-        chain_ids=chain_ids,
-        residue_ids=residue_ids,
-        compute_source=source,
+        confidence=confidence,
+        affinity=affinity,
+        source=source,
+        skip_plddt=skip_plddt,
     )
 
 
@@ -2982,40 +2842,6 @@ def _render_mutation_energy_delta(query: ProteinQuery, prediction: PredictionRes
         )
 
     _render_provenance_badge(prediction)
-
-
-
-    import molviewspec as mvs
-
-    builder = mvs.create_builder()
-    structure = (
-        builder.download(url="structure.pdb")
-        .parse(format="pdb")
-        .model_structure()
-    )
-
-    rep = structure.component(selector="polymer").representation(type="cartoon")
-    rep.color(color="#888888")
-
-    if annotations:
-        rep.color_from_uri(uri="overlay_colors.json", format="json", schema="residue")
-        structure.tooltip_from_uri(uri="overlay_tooltips.json", format="json", schema="residue")
-
-    color_data = [
-        {"label_asym_id": a["label_asym_id"], "label_seq_id": a["label_seq_id"], "color": a["color"]}
-        for a in annotations
-    ]
-    tooltip_data = [
-        {"label_asym_id": a["label_asym_id"], "label_seq_id": a["label_seq_id"], "tooltip": a["tooltip"]}
-        for a in annotations
-    ]
-
-    data = {"structure.pdb": prediction.pdb_content.encode("utf-8")}
-    if annotations:
-        data["overlay_colors.json"] = json.dumps(color_data).encode("utf-8")
-        data["overlay_tooltips.json"] = json.dumps(tooltip_data).encode("utf-8")
-
-    mvs.molstar_streamlit(builder, data=data, height=600)
 
 
 def _render_color_legend():

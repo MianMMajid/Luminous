@@ -562,13 +562,21 @@ def _render_sketch_biorender(interpretation: dict, query: ProteinQuery | None):
     """Render BioRender figure generation + template suggestions for the sketch."""
     st.divider()
 
-    # ── 1. AI Figure Generation (primary action) ──
-    st.markdown("##### Generate Figure with BioRender")
+    # ── 1. AI Figure Generation (requires BioRender OAuth token) ──
+    from src.config import ANTHROPIC_API_KEY, BIORENDER_TOKEN
 
     fig_cache_key = "sketch_biorender_figure"
     fig_result = st.session_state.get(fig_cache_key)
 
-    if fig_result is None:
+    if not BIORENDER_TOKEN or not ANTHROPIC_API_KEY:
+        # BioRender MCP requires OAuth — skip to template search
+        st.markdown("##### BioRender Integration")
+        st.caption(
+            "BioRender figure generation requires OAuth setup. "
+            "Use the template search and AI figure prompt below instead."
+        )
+    elif fig_result is None:
+        st.markdown("##### Generate Figure with BioRender")
         if st.button(
             "Generate Figure with BioRender",
             type="primary",
@@ -580,10 +588,9 @@ def _render_sketch_biorender(interpretation: dict, query: ProteinQuery | None):
                 fig_result = generate_biorender_figure(interpretation, query)
                 st.session_state[fig_cache_key] = fig_result or {"_failed": True}
     elif fig_result.get("_failed"):
-        st.warning(
-            "BioRender figure generation is not available. "
-            "Check that both `BIORENDER_TOKEN` and `ANTHROPIC_API_KEY` are set in your `.env` file. "
-            "You can still use the template search below."
+        st.caption(
+            "BioRender figure generation unavailable. "
+            "Use the template search and AI figure prompt below."
         )
     else:
         # Show successful generation result
